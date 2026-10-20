@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# 本地归档 / 生成物（不入库）
+# .archive 是早期版本备份，git 历史本身就记录了演进过程
+# .tools/covers 是 make_covers.py 的中间产物，已复制进 Assets.xcassets
+.archive/
+.tools/covers/
