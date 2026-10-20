@@ -173,6 +173,16 @@ enum DebugLaunch {
         #endif
     }
 
+    /// `-detail quality|downloads|about|account` 启动即打开「我的」页对应的详情浮层。
+    /// 只决定"打开哪一页"，不改变任何交互行为。
+    static var profileDetail: String? {
+        #if DEBUG
+        return UserDefaults.standard.string(forKey: "detail")
+        #else
+        return nil
+        #endif
+    }
+
     /// `-lyrics 1` 启动即展开歌词视图，用来截图验证歌词解析。
     static var opensLyrics: Bool {
         #if DEBUG

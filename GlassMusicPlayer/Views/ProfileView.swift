@@ -6,9 +6,11 @@ struct ProfileView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var scrollOffset: CGFloat = 0
-    @State private var equalizerOn = true
     @State private var sleepTimerOn = false
-    @State private var losslessOnly = true
+    /// 睡眠定时的计时任务。非 nil 就表示"正在倒计时"。
+    @State private var sleepTask: Task<Void, Never>?
+    @State private var detail: ProfileDetail?
+    @State private var showsLogoutConfirm = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -32,11 +34,48 @@ struct ProfileView: View {
             .readScrollOffset(into: $scrollOffset)
 
             ScreenHeader(title: "我的", scrollOffset: scrollOffset) {
-                HeaderIconButton(systemName: "gearshape") {}
+                HeaderIconButton(systemName: "gearshape") {
+                    detail = .about
+                }
             }
             .padding(.horizontal, LiquidTheme.Spacing.md)
             .padding(.top, 4)
         }
+        .sheet(item: $detail) { item in
+            ProfileDetailSheet(detail: item)
+                .environment(player)
+        }
+        .onAppear {
+            // 截图用：-detail <name> 直接打开某个详情浮层
+            if let raw = DebugLaunch.profileDetail, let parsed = ProfileDetail(rawValue: raw) {
+                detail = parsed
+            }
+        }
+        .confirmationDialog("退出登录", isPresented: $showsLogoutConfirm, titleVisibility: .visible) {
+            Button("退出登录", role: .destructive) {}
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("演示版本没有接入真实账号，这里不会真的登出。")
+        }
+    }
+
+    /// 睡眠定时开关。打开就起一个 30 分钟的任务，到点暂停播放。
+    private var sleepBinding: Binding<Bool> {
+        Binding(
+            get: { sleepTask != nil },
+            set: { isOn in
+                sleepTask?.cancel()
+                sleepTask = nil
+                guard isOn else { return }
+
+                sleepTask = Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(30 * 60))
+                    guard !Task.isCancelled else { return }
+                    if player.isPlaying { player.togglePlayPause() }
+                    sleepTask = nil
+                }
+            }
+        )
     }
 
     // MARK: - 标题
@@ -137,18 +176,10 @@ struct ProfileView: View {
                     icon: "waveform.badge.magnifyingglass",
                     tint: LiquidTheme.Palette.accent,
                     title: "音质与下载",
-                    value: losslessOnly ? "仅无损" : "自动"
-                )
-
-                rowDivider
-
-                toggleRow(
-                    icon: "slider.horizontal.3",
-                    tint: Color(hex: 0x00B894),
-                    title: "均衡器",
-                    subtitle: "赛博低音",
-                    isOn: $equalizerOn
-                )
+                    value: AudioQuality.current.title
+                ) {
+                    detail = .quality
+                }
 
                 rowDivider
 
@@ -156,8 +187,8 @@ struct ProfileView: View {
                     icon: "moon.zzz.fill",
                     tint: Color(hex: 0x6C5CE7),
                     title: "睡眠定时",
-                    subtitle: sleepTimerOn ? "30 分钟后停止" : "关闭",
-                    isOn: $sleepTimerOn
+                    subtitle: sleepTimerOn ? "30 分钟后停止播放" : "关闭",
+                    isOn: sleepBinding
                 )
             }
             .glassPanel()
@@ -178,7 +209,9 @@ struct ProfileView: View {
                     tint: Color(hex: 0xE17055),
                     title: "账号与安全",
                     value: nil
-                )
+                ) {
+                    detail = .account
+                }
 
                 rowDivider
 
@@ -186,8 +219,10 @@ struct ProfileView: View {
                     icon: "arrow.down.circle.fill",
                     tint: Color(hex: 0x0984E3),
                     title: "已下载",
-                    value: "12 首"
-                )
+                    value: "\(MusicLibrary.songs.count) 首"
+                ) {
+                    detail = .downloads
+                }
 
                 rowDivider
 
@@ -196,7 +231,9 @@ struct ProfileView: View {
                     tint: LiquidTheme.Palette.secondary,
                     title: "关于 BhandsMusic",
                     value: "v1.0.0"
-                )
+                ) {
+                    detail = .about
+                }
             }
             .glassPanel()
             .padding(.horizontal, LiquidTheme.Spacing.screenH)
@@ -205,7 +242,9 @@ struct ProfileView: View {
 
     private var footer: some View {
         VStack(spacing: LiquidTheme.Spacing.xs) {
-            Button {} label: {
+            Button {
+                showsLogoutConfirm = true
+            } label: {
                 Text("退出登录")
                     .font(LiquidTheme.Typography.button)
                     .foregroundStyle(Color(hex: 0xD63031))
@@ -225,34 +264,40 @@ struct ProfileView: View {
 
     // MARK: - 行组件
 
+    /// 可点击的导航行。
+    /// 之前这里只是个 `HStack` + 箭头 —— 根本没有 `Button`，点了完全没反应。
     private func navigationRow(
         icon: String,
         tint: Color,
         title: String,
-        value: String?
+        value: String?,
+        action: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: LiquidTheme.Spacing.sm) {
-            iconBadge(icon, tint: tint)
+        Button(action: action) {
+            HStack(spacing: LiquidTheme.Spacing.sm) {
+                iconBadge(icon, tint: tint)
 
-            Text(title)
-                .font(LiquidTheme.Typography.rowTitle)
-                .foregroundStyle(LiquidTheme.Palette.label)
+                Text(title)
+                    .font(LiquidTheme.Typography.rowTitle)
+                    .foregroundStyle(LiquidTheme.Palette.label)
 
-            Spacer(minLength: LiquidTheme.Spacing.xs)
+                Spacer(minLength: LiquidTheme.Spacing.xs)
 
-            if let value {
-                Text(value)
-                    .font(LiquidTheme.Typography.rowMeta)
-                    .foregroundStyle(LiquidTheme.Palette.secondary)
+                if let value {
+                    Text(value)
+                        .font(LiquidTheme.Typography.rowMeta)
+                        .foregroundStyle(LiquidTheme.Palette.secondary)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LiquidTheme.Palette.tertiary)
             }
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(LiquidTheme.Palette.tertiary)
+            .frame(minHeight: LiquidTheme.Hit.row)
+            .padding(.horizontal, LiquidTheme.Spacing.md)
+            .contentShape(Rectangle())
         }
-        .frame(minHeight: LiquidTheme.Hit.row)
-        .padding(.horizontal, LiquidTheme.Spacing.md)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
     }
 
     private func toggleRow(

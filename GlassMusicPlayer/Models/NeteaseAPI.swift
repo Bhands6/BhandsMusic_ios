@@ -180,7 +180,8 @@ enum NeteaseAPI {
     /// 返回的常常是 `http://m7xx.music.126.net/...`，这里统一换成 https ——
     /// iOS 的 ATS 默认拦明文 HTTP，换掉就不用给整个域名开例外。
     static func streamURL(for id: Int) async throws -> URL {
-        let json = try await get("/song/url/v1", ["id": String(id), "level": "exhigh"])
+        // 档位跟着「我的 → 音质与下载」走，改完下一首就按新码率请求
+        let json = try await get("/song/url/v1", ["id": String(id), "level": AudioQuality.current.neteaseLevel])
         guard
             let data = json["data"] as? [[String: Any]],
             let raw = data.first?["url"] as? String,
