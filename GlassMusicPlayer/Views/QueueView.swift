@@ -42,8 +42,16 @@ struct QueueView: View {
                     // 卡片别贴着屏幕底边，留出呼吸空间
                     .padding(.bottom, 28)
                     .onAppear {
-                        // 进来就定位到正在播放那首，前后都能滚
-                        proxy.scrollTo(player.current.id, anchor: .center)
+                        // 让当前曲目停在列表**顶部**，下面就是"接下来播放"。
+                        // 用 .center 的话上下各露出几首听过的，反而看不清后面还有什么。
+                        // 想翻听过的往上滚即可。
+                        proxy.scrollTo(player.current.id, anchor: .top)
+                    }
+                    .onChange(of: player.current.id) { _, newValue in
+                        // 切歌后重新对齐到顶部
+                        withAnimation(LiquidTheme.Motion.gentle) {
+                            proxy.scrollTo(newValue, anchor: .top)
+                        }
                     }
                 }
             }
