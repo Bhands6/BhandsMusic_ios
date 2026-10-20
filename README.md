@@ -223,6 +223,37 @@ content
 连点会取消上一个计时器，避免前一条把后一条提前关掉。
 `AccessibilityNotification.Announcement` 让 VoiceOver 也能读到。
 
+### 音频播放
+
+**真的在放声音**，不是模拟。
+
+| 文件 | 职责 |
+|---|---|
+| `Models/AudioEngine.swift` | 包一层 `AVPlayer`：会话、时间观察、锁屏信息、远程控制 |
+| `Models/MusicLibrary.swift` | `PlayerModel` 把 UI 状态映射到引擎 |
+
+**四件必须做的事**（缺一样都会出问题）：
+
+1. **`AVAudioSession` 配 `.playback`** —— 不配的话静音键一拨就没声，锁屏也停
+2. **`addPeriodicTimeObserver`** —— 每 0.25 秒回吐 0...1 进度，替换掉原来写死的 `progress`
+3. **`MPNowPlayingInfoCenter`** —— 锁屏 / 车机显示歌名、封面、进度
+4. **`MPRemoteCommandCenter`** —— 耳机双击、锁屏按钮能控制
+
+**后台播放**需要在 Info.plist 声明 `UIBackgroundModes: [audio]`。
+工程走的是 `GENERATE_INFOPLIST_FILE = YES`，所以用「部分 plist 合并」：
+`Config/Info.plist` 只写自动生成覆盖不到的键，再设 `INFOPLIST_FILE = Config/Info.plist`，
+Xcode 会把两边合并（`CFBundleDisplayName`、`UILaunchScreen` 等自动键都保留）。
+
+**拖拽进度条要防"打架"**：`ProgressBar` 的 binding 写入转成 `seek(to:)`，
+同时把 `isSeeking` 置位 —— 否则播放器的进度回调会不停覆盖手指位置，滑块会往回跳。
+
+**音轨是脚本合成的**：`.tools/make_audio.py` 生成 8 首环境音乐（自然小调，
+i–VI–III–VII 和弦进行，铺底 + 低音脉冲 + 空气感），用 `afconvert` 转 AAC 64kbps。
+**自己合成的原因是版权** —— 完全由脚本生成，可以随仓库分发。
+
+> 启动时**不自动播**，只预装载。一打开 App 就出声太粗暴。
+> 自动化截图用 `-autoplay 1` 强制出声（模拟器不能注入点击）。
+
 ### 纵向节奏
 
 | 层级 | 值 |

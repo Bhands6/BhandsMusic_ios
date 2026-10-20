@@ -25,6 +25,16 @@ struct Song: Identifiable, Hashable {
 
     var durationText: String { Song.timeText(duration) }
 
+    /// 音频资源名：和封面同名（`cover_ink_rivers` → `ink_rivers`）
+    var audioName: String { artworkName.replacingOccurrences(of: "cover_", with: "") }
+
+    /// 打包进 App 的音轨。
+    /// 同步文件夹可能把资源摊平到 bundle 根，也可能保留 `Audio/` 子目录，两种都试一下。
+    var audioURL: URL? {
+        Bundle.main.url(forResource: audioName, withExtension: "m4a")
+            ?? Bundle.main.url(forResource: audioName, withExtension: "m4a", subdirectory: "Audio")
+    }
+
     var playsText: String {
         plays >= 10_000
             ? String(format: "%.0f 万次播放", Double(plays) / 10_000)
@@ -328,14 +338,42 @@ enum RepeatMode {
 final class PlayerModel {
     var queue: [Song] = MusicLibrary.songs
     var currentIndex: Int = 0
-    var isPlaying: Bool = true
-    var progress: Double = 0.32
+    var isPlaying: Bool = false
+    var progress: Double = 0
     var volume: Double = 0.7
     var isShuffleOn: Bool = false
     var repeatMode: RepeatMode = .off
     /// 正在播放页的歌词模式
     var showsLyrics: Bool = false
+    /// 用户正在拖进度条 —— 期间不让播放器的进度回调覆盖手指位置
+    var isSeeking: Bool = false
     private(set) var likedIDs: Set<UUID> = []
+
+    /// 真正的音频引擎。`@ObservationIgnored`：它不是 UI 状态，不需要被观察。
+    @ObservationIgnored private let engine = AudioEngine()
+
+    init() {
+        engine.onProgress = { [weak self] value in
+            guard let self, !self.isSeeking else { return }
+            self.progress = value
+        }
+        engine.onFinish = { [weak self] in
+            self?.handleTrackFinished()
+        }
+        engine.onRemoteToggle = { [weak self] in
+            self?.togglePlayPause()
+        }
+        engine.onRemoteNext = { [weak self] in
+            self?.next()
+        }
+        engine.onRemotePrevious = { [weak self] in
+            _ = self?.previous()
+        }
+
+        // 启动时只装载不自动播 —— 一打开 App 就出声太粗暴。
+        // 自动化截图时用 -autoplay 1 强制出声，验证音频链路。
+        loadCurrent(autoplay: DebugLaunch.autoplays)
+    }
 
     var current: Song {
         guard !queue.isEmpty else { return MusicLibrary.songs[0] }
@@ -375,14 +413,13 @@ final class PlayerModel {
             queue = [song]
             currentIndex = 0
         }
-        progress = 0
-        isPlaying = true
+        loadCurrent(autoplay: true)
     }
 
     func next() {
         guard !queue.isEmpty else { return }
         currentIndex = (currentIndex + 1) % queue.count
-        progress = 0
+        loadCurrent(autoplay: true)
     }
 
     /// - Returns: 是否真的切换/重播了。`false` 表示已经是第一首、什么也没发生 ——
@@ -393,19 +430,76 @@ final class PlayerModel {
 
         // 播到 3 秒以后，上一首先回到本曲开头 —— 和真实播放器一致
         if elapsed > 3 {
-            progress = 0
+            seek(to: 0)
             return true
         }
 
         // 已经是第一首：不再循环到末尾，交给调用方提示
         guard currentIndex > 0 else { return false }
         currentIndex -= 1
-        progress = 0
+        loadCurrent(autoplay: true)
         return true
     }
 
+    // MARK: - 播放控制
+
+    func togglePlayPause() {
+        isPlaying.toggle()
+        if isPlaying {
+            engine.play()
+        } else {
+            engine.pause()
+        }
+        syncNowPlaying()
+    }
+
     func seek(to value: Double) {
-        progress = min(max(value, 0), 1)
+        let clamped = min(max(value, 0), 1)
+        progress = clamped
+        engine.seek(to: clamped * current.duration)
+        syncNowPlaying()
+    }
+
+    /// 装载当前曲目。`autoplay` 决定装载后是否立刻出声。
+    private func loadCurrent(autoplay: Bool) {
+        progress = 0
+        isPlaying = autoplay
+
+        guard let url = current.audioURL else {
+            // 找不到音轨时退化成"静音播放"，UI 仍然可操作
+            isPlaying = false
+            return
+        }
+        engine.load(url: url, duration: current.duration, autoplay: autoplay)
+        syncNowPlaying()
+    }
+
+    /// 一曲自然播完。按循环模式决定重播 / 下一首 / 停下。
+    private func handleTrackFinished() {
+        switch repeatMode {
+        case .one:
+            seek(to: 0)
+            engine.play()
+            isPlaying = true
+        case .all:
+            next()
+        case .off:
+            if currentIndex < queue.count - 1 {
+                next()
+            } else {
+                progress = 1
+                isPlaying = false
+            }
+        }
+    }
+
+    private func syncNowPlaying() {
+        engine.updateNowPlaying(
+            title: current.title,
+            artist: current.artist,
+            elapsed: progress * current.duration,
+            isPlaying: isPlaying
+        )
     }
 }
 

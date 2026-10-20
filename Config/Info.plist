@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 后台播放。没有这条，锁屏 / 切到别的 App 时音频会被挂起。
+	     其余键（CFBundleDisplayName、场景清单、屏幕方向等）仍由
+	     GENERATE_INFOPLIST_FILE 自动生成，这里只补自动生成覆盖不到的项。 -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+</dict>
+</plist>

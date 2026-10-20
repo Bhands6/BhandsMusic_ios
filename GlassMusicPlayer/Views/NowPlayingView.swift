@@ -31,8 +31,16 @@ struct NowPlayingView: View {
 
                 infoBlock
 
-                ProgressBar(value: $player.progress) { editing in
+                // 拖拽时把写入转成 seek；同时标记 isSeeking，
+                // 否则播放器的进度回调会不停覆盖手指位置，滑块会"跳回去"
+                ProgressBar(
+                    value: Binding(
+                        get: { player.progress },
+                        set: { player.seek(to: $0) }
+                    )
+                ) { editing in
                     isScrubbing = editing
+                    player.isSeeking = editing
                 }
                 .padding(.top, LiquidTheme.Spacing.md)
 
@@ -197,7 +205,7 @@ struct NowPlayingView: View {
             }
 
             Button {
-                player.isPlaying.toggle()
+                player.togglePlayPause()
             } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 27, weight: .semibold))

@@ -102,7 +102,7 @@ struct RootView: View {
                         showToast("已经是第一首了")
                     }
                 },
-                onPlayPause: { player.isPlaying.toggle() },
+                onPlayPause: { player.togglePlayPause() },
                 onNext: { player.next() }
             )
 
@@ -150,6 +150,16 @@ enum DebugLaunch {
     static var showsToast: Bool {
         #if DEBUG
         return UserDefaults.standard.bool(forKey: "toast")
+        #else
+        return false
+        #endif
+    }
+
+    /// `-autoplay 1` 启动即开始播放。
+    /// 自动化截图验证音频链路用（模拟器不能注入点击，只能靠这个触发）。
+    static var autoplays: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "autoplay")
         #else
         return false
         #endif
