@@ -21,8 +21,8 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: LiquidTheme.Spacing.section) {
                     greeting
                     recentlyPlayedSection
-                    radioSection
                     madeForYouSection
+                    radioSection
                     newReleasesSection
                     topSongsSection
                 }
