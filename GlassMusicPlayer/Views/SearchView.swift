@@ -11,7 +11,10 @@ struct SearchView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var query = DebugLaunch.initialQuery
+    /// 搜索框**永远是空的**。之前用 `DebugLaunch.initialQuery` 预填过，
+    /// 但一进页面就有内容会自动触发搜索 —— 看起来就像"页面自己在搜索"，很容易被当成 bug。
+    /// 截图需要的话手动输入，不预填。
+    @State private var query = ""
     @State private var scrollOffset: CGFloat = 0
     @FocusState private var isFocused: Bool
 
@@ -67,13 +70,9 @@ struct SearchView: View {
             if isModal { isFocused = true }
         }
         .task(id: query) {
+            // 只搜索，不播放。之前这里有个 -autoplay 的钩子会自动播第一条，
+            // 一进搜索页就开始出声 —— 那是截图用的，不该留在正常流程里。
             await searchRemote()
-
-            // 截图验证用：模拟器点不了列表，-autoplay 1 时自动播第一条，
-            // 好确认「解析地址 → 装载 → 出声」这条链真的通
-            if DebugLaunch.autoplays, let first = remoteSongs.first {
-                player.play(first, in: remoteSongs)
-            }
         }
     }
 

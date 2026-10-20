@@ -164,31 +164,12 @@ enum DebugLaunch {
         #endif
     }
 
-    /// `-autoplay 1` 启动即开始播放。
-    /// 自动化截图验证音频链路用（模拟器不能注入点击，只能靠这个触发）。
-    static var autoplays: Bool {
-        #if DEBUG
-        return UserDefaults.standard.bool(forKey: "autoplay")
-        #else
-        return false
-        #endif
-    }
-
     /// `-radio N` 启动即播放第 N 个网络电台（1 起），用来验证直播流。
     static var radioIndex: Int {
         #if DEBUG
         return UserDefaults.standard.integer(forKey: "radio")
         #else
         return 0
-        #endif
-    }
-
-    /// `-query <关键词>` 预填搜索框，用来验证联网搜索（模拟器打不了字）。
-    static var initialQuery: String {
-        #if DEBUG
-        return UserDefaults.standard.string(forKey: "query") ?? ""
-        #else
-        return ""
         #endif
     }
 

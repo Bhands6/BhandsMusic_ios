@@ -445,8 +445,9 @@ final class PlayerModel {
         }
 
         // 启动时只装载不自动播 —— 一打开 App 就出声太粗暴。
-        // 自动化截图时用 -autoplay 1 强制出声，验证音频链路。
-        loadCurrent(autoplay: DebugLaunch.autoplays)
+        // （之前有个 -autoplay 的调试开关能强制出声，已移除：
+        //  它会让人分不清"是不是 App 自己在播"。）
+        loadCurrent(autoplay: false)
 
         // -radio N 直接进某个网络电台，验证直播流
         if DebugLaunch.radioIndex > 0 {
