@@ -21,8 +21,9 @@ struct QueueView: View {
                     .padding(.top, 72)
                     .padding(.bottom, 40)
                 }
-                // 之前是 .hidden —— 队列有二三十首，没有滚动条完全看不出还有多少
-                .scrollIndicators(.visible)
+                // 能滚，但不显示滚动条 —— 队列页是全屏沉浸式，右侧一条灰线会破坏氛围。
+                // 位置感交给标题旁的「5 / 20」。
+                .scrollIndicators(.hidden)
                 .onAppear {
                     // 进来就定位到正在播放那首，前后都能滚
                     proxy.scrollTo(player.current.id, anchor: .center)
