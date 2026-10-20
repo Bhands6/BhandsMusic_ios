@@ -12,15 +12,22 @@ struct QueueView: View {
         ZStack(alignment: .top) {
             ArtworkBackdrop(artworkName: player.current.artworkName)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: LiquidTheme.Spacing.lg) {
-                    nowPlayingSection
-                    upNextSection
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: LiquidTheme.Spacing.lg) {
+                        nowPlayingSection
+                        queueSection
+                    }
+                    .padding(.top, 72)
+                    .padding(.bottom, 40)
                 }
-                .padding(.top, 72)
-                .padding(.bottom, 40)
+                // 之前是 .hidden —— 队列有二三十首，没有滚动条完全看不出还有多少
+                .scrollIndicators(.visible)
+                .onAppear {
+                    // 进来就定位到正在播放那首，前后都能滚
+                    proxy.scrollTo(player.current.id, anchor: .center)
+                }
             }
-            .scrollIndicators(.hidden)
 
             headerBar
         }
@@ -87,12 +94,21 @@ struct QueueView: View {
 
     // MARK: - 接下来播放
 
-    private var upNextSection: some View {
+    private var queueSection: some View {
         VStack(alignment: .leading, spacing: LiquidTheme.Spacing.sm) {
-            sectionTitle("接下来播放")
+            HStack {
+                sectionTitle("队列")
+                Spacer()
+                Text("\(player.currentIndex + 1) / \(player.queue.count)")
+                    .font(LiquidTheme.Typography.rowMeta)
+                    .foregroundStyle(LiquidTheme.Palette.onDarkSoft)
+            }
+            .padding(.trailing, LiquidTheme.Spacing.screenH)
 
             VStack(spacing: 0) {
-                ForEach(Array(player.upNext.enumerated()), id: \.element.id) { index, song in
+                // 整条队列全列出来 —— 往上能看听过，往下能看还没播的。
+                // 之前只给 `upNext`，听过的歌在界面上根本找不到。
+                ForEach(Array(player.queue.enumerated()), id: \.element.id) { index, song in
                     if index > 0 {
                         Rectangle()
                             .fill(LiquidTheme.Palette.separator.opacity(0.5))
@@ -100,31 +116,7 @@ struct QueueView: View {
                             .padding(.leading, 68)
                     }
 
-                    Button {
-                        player.play(song, in: player.queue)
-                    } label: {
-                        HStack(spacing: LiquidTheme.Spacing.sm) {
-                            ArtworkView(name: song.artworkName, cornerRadius: 10)
-                                .frame(width: 44, height: 44)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(song.title)
-                                    .font(LiquidTheme.Typography.rowTitle)
-                                    .foregroundStyle(LiquidTheme.Palette.onDark)
-                                    .lineLimit(1)
-                                Text(song.artist)
-                                    .font(LiquidTheme.Typography.rowMeta)
-                                    .foregroundStyle(LiquidTheme.Palette.onDarkSoft)
-                                    .lineLimit(1)
-                            }
-
-                            Spacer(minLength: 0)
-                        }
-                        .frame(minHeight: LiquidTheme.Hit.row)
-                        .padding(.horizontal, LiquidTheme.Spacing.sm)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+                    queueRow(song, index: index)
                 }
             }
             .background(
@@ -133,6 +125,48 @@ struct QueueView: View {
             )
             .padding(.horizontal, LiquidTheme.Spacing.screenH)
         }
+    }
+
+    private func queueRow(_ song: Song, index: Int) -> some View {
+        let isCurrent = song.id == player.current.id
+        let isPlayed = index < player.currentIndex
+
+        return Button {
+            player.play(at: index, in: player.queue)
+        } label: {
+            HStack(spacing: LiquidTheme.Spacing.sm) {
+                ArtworkView(name: song.artworkName, cornerRadius: 10)
+                    .frame(width: 44, height: 44)
+                    // 听过的封面压暗，一眼能分出前后
+                    .opacity(isPlayed ? 0.45 : 1)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(song.title)
+                        .font(LiquidTheme.Typography.rowTitle)
+                        .foregroundStyle(
+                            isCurrent ? LiquidTheme.Palette.accent
+                                      : (isPlayed ? LiquidTheme.Palette.onDark.opacity(0.45)
+                                                  : LiquidTheme.Palette.onDark)
+                        )
+                        .lineLimit(1)
+                    Text(song.artist)
+                        .font(LiquidTheme.Typography.rowMeta)
+                        .foregroundStyle(LiquidTheme.Palette.onDarkSoft.opacity(isPlayed ? 0.6 : 1))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                if isCurrent {
+                    PlayingIndicator()
+                }
+            }
+            .frame(minHeight: LiquidTheme.Hit.row)
+            .padding(.horizontal, LiquidTheme.Spacing.sm)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .id(song.id)
     }
 
     private func sectionTitle(_ text: String) -> some View {
