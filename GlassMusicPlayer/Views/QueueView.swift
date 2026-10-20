@@ -119,11 +119,6 @@ struct QueueView: View {
                             }
 
                             Spacer(minLength: 0)
-
-                            Image(systemName: "line.3.horizontal")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(LiquidTheme.Palette.onDark.opacity(0.35))
-                                .frame(width: 32, height: LiquidTheme.Hit.minimum)
                         }
                         .frame(minHeight: LiquidTheme.Hit.row)
                         .padding(.horizontal, LiquidTheme.Spacing.sm)
