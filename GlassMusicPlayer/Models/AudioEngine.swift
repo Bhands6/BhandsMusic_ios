@@ -97,7 +97,13 @@ final class AudioEngine {
     // MARK: - 锁屏与远程控制
 
     /// 同步锁屏信息。切歌、暂停、拖进度时都要调。
-    func updateNowPlaying(title: String, artist: String, elapsed: Double, isPlaying: Bool) {
+    func updateNowPlaying(
+        title: String,
+        artist: String,
+        artworkName: String,
+        elapsed: Double,
+        isPlaying: Bool
+    ) {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyArtist: artist,
@@ -105,9 +111,8 @@ final class AudioEngine {
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
         ]
-        // 封面：用 App 图标兜底，真实项目里应该取曲目封面
-        if let icon = UIImage(named: "AppIcon") ?? UIImage(named: "cover_neon_tokyo") {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: icon.size) { _ in icon }
+        if let cover = UIImage(named: artworkName) {
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: cover.size) { _ in cover }
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }

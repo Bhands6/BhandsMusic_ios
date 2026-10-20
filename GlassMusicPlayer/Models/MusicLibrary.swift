@@ -340,7 +340,6 @@ final class PlayerModel {
     var currentIndex: Int = 0
     var isPlaying: Bool = false
     var progress: Double = 0
-    var volume: Double = 0.7
     var isShuffleOn: Bool = false
     var repeatMode: RepeatMode = .off
     /// 正在播放页的歌词模式
@@ -348,6 +347,9 @@ final class PlayerModel {
     /// 用户正在拖进度条 —— 期间不让播放器的进度回调覆盖手指位置
     var isSeeking: Bool = false
     private(set) var likedIDs: Set<UUID> = []
+
+    /// 随机播放走过的曲目下标，「上一曲」按这个回退
+    @ObservationIgnored private var history: [Int] = []
 
     /// 真正的音频引擎。`@ObservationIgnored`：它不是 UI 状态，不需要被观察。
     @ObservationIgnored private let engine = AudioEngine()
@@ -404,6 +406,9 @@ final class PlayerModel {
 
     /// 从某个列表点播一首歌 —— 队列会被替换成这个列表
     func play(_ song: Song, in list: [Song]? = nil) {
+        // 换队列了，随机历史作废
+        history.removeAll()
+
         if let list, !list.isEmpty {
             queue = list
             currentIndex = list.firstIndex(of: song) ?? 0
@@ -418,8 +423,27 @@ final class PlayerModel {
 
     func next() {
         guard !queue.isEmpty else { return }
-        currentIndex = (currentIndex + 1) % queue.count
+
+        if isShuffleOn {
+            history.append(currentIndex)
+            // 只留最近 50 条，避免长时间播放把数组撑大
+            if history.count > 50 { history.removeFirst() }
+            currentIndex = randomIndex(excluding: currentIndex)
+        } else {
+            history.removeAll()
+            currentIndex = (currentIndex + 1) % queue.count
+        }
         loadCurrent(autoplay: true)
+    }
+
+    /// 随机但不重复当前这首。队列只有一首时原地不动。
+    private func randomIndex(excluding index: Int) -> Int {
+        guard queue.count > 1 else { return index }
+        var candidate = index
+        while candidate == index {
+            candidate = Int.random(in: 0..<queue.count)
+        }
+        return candidate
     }
 
     /// - Returns: 是否真的切换/重播了。`false` 表示已经是第一首、什么也没发生 ——
@@ -431,6 +455,13 @@ final class PlayerModel {
         // 播到 3 秒以后，上一首先回到本曲开头 —— 和真实播放器一致
         if elapsed > 3 {
             seek(to: 0)
+            return true
+        }
+
+        // 随机模式下按历史回退，而不是按队列序号
+        if isShuffleOn, let previousIndex = history.popLast() {
+            currentIndex = previousIndex
+            loadCurrent(autoplay: true)
             return true
         }
 
@@ -497,6 +528,7 @@ final class PlayerModel {
         engine.updateNowPlaying(
             title: current.title,
             artist: current.artist,
+            artworkName: current.artworkName,
             elapsed: progress * current.duration,
             isPlaying: isPlaying
         )
