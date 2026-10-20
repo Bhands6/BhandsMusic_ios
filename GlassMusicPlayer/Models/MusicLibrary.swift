@@ -93,12 +93,20 @@ struct Playlist: Identifiable, Hashable {
     let symbol: String
     let colors: [Color]
     let songIDs: [UUID]
+    /// 从网易云拉真实曲库用的关键词。`nil` 表示只播本地选曲。
+    var remoteKeyword: String? = nil
 
-    /// 曲目数**由 `songIDs` 推导**，不再单独写死。
+    /// 本地曲目数。
     ///
-    /// 之前是独立字段，写的是 30 / 60 / 100…，但 `songIDs` 只放了整库 8 首 ——
-    /// 于是出现「30 首 · 31 分钟」这种自相矛盾的显示。
+    /// ⚠️ 界面上的「N 首」**不要用这个** —— 远程曲库加载成功后要用
+    /// `PlaylistStore.songs(for:).count`，否则会出现「标题写 30 首、列表只有 6 首」。
     var count: Int { songIDs.count }
+
+    /// 按 `songIDs` 的顺序解析本地曲目（保序，每日推荐是洗过牌的）
+    var localSongs: [Song] {
+        let byID = Dictionary(uniqueKeysWithValues: MusicLibrary.songs.map { ($0.id, $0) })
+        return songIDs.compactMap { byID[$0] }
+    }
 }
 
 // MARK: - 艺人
@@ -276,14 +284,16 @@ enum MusicLibrary {
             subtitle: "每天 6:00 更新",
             symbol: "calendar",
             colors: [Color(hex: 0xFFB347), Color(hex: 0xFF6B6B)],
-            songIDs: dailyPick(6, salt: 0)
+            songIDs: dailyPick(6, salt: 0),
+            remoteKeyword: "新歌"
         ),
         Playlist(
             title: "民谣",
             subtitle: "吉他与人声",
             symbol: "guitars.fill",
             colors: [Color(hex: 0x7A9A3F), Color(hex: 0xD4C685)],
-            songIDs: dailyPick(4, salt: 1)
+            songIDs: dailyPick(4, salt: 1),
+            remoteKeyword: "民谣"
         ),
         Playlist(
             title: "抖音热曲",
@@ -292,7 +302,8 @@ enum MusicLibrary {
             // 红 → 青在 RGB 里直接插值会经过灰色，中段糊成脏粉。
             // 中间插一个饱和紫，路径才一直在高饱和区。
             colors: [Color(hex: 0xFE2C55), Color(hex: 0xA82AC7), Color(hex: 0x25F4EE)],
-            songIDs: dailyPick(5, salt: 2)
+            songIDs: dailyPick(5, salt: 2),
+            remoteKeyword: "抖音热歌"
         ),
         Playlist(
             title: "飙升榜",
@@ -300,21 +311,24 @@ enum MusicLibrary {
             symbol: "chart.line.uptrend.xyaxis",
             colors: [Color(hex: 0x7B2FF7), Color(hex: 0xE10098)],
             // 榜单按真实播放量排，不做随机
-            songIDs: songs.sorted { $0.plays > $1.plays }.map(\.id)
+            songIDs: songs.sorted { $0.plays > $1.plays }.map(\.id),
+            remoteKeyword: "飙升榜"
         ),
         Playlist(
             title: "华语新声",
             subtitle: "编辑部精选",
             symbol: "sparkles",
             colors: [Color(hex: 0xD63031), Color(hex: 0xFDCB6E)],
-            songIDs: dailyPick(4, salt: 3)
+            songIDs: dailyPick(4, salt: 3),
+            remoteKeyword: "华语新歌"
         ),
         Playlist(
             title: "电子浪潮",
             subtitle: "从地下俱乐部到主舞台",
             symbol: "waveform",
             colors: [Color(hex: 0x6C5CE7), Color(hex: 0x00CEC9)],
-            songIDs: dailyPick(5, salt: 4)
+            songIDs: dailyPick(5, salt: 4),
+            remoteKeyword: "电子音乐"
         )
     ]
 

@@ -9,6 +9,8 @@ struct RootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var player = PlayerModel()
+    /// 歌单的远程曲库（网易云）。本地只有 8 首，撑不起 30 首的歌单。
+    @State private var playlists = PlaylistStore()
     @State private var selection = DebugLaunch.initialTab
     @State private var showsNowPlaying = DebugLaunch.opensNowPlaying
 
@@ -49,6 +51,7 @@ struct RootView: View {
             }
         }
         .environment(player)
+        .environment(playlists)
         // 内容与 chrome 一起延伸到屏幕底部。
         // iOS 26 的浮动 Tab Bar 就贴在这个位置：下方只留 ~16pt 给 Home Indicator，
         // 而不是留一整条 34pt 的安全区 —— 那样 Tab Bar 会像悬在内容中间。
@@ -66,6 +69,8 @@ struct RootView: View {
                 // 截图用：给足时间，避免还没拍到就淡出了
                 showToast("已经是第一首了", seconds: 20)
             }
+            // 歌单的真实曲库（网易云）。失败会静默退回本地选曲。
+            await playlists.loadAll()
         }
     }
 

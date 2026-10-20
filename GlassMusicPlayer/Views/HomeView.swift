@@ -6,6 +6,7 @@ import SwiftUI
 /// → 悬浮玻璃头部覆盖其上。滚动时大标题滚走、头部标题淡入。
 struct HomeView: View {
     @Environment(PlayerModel.self) private var player
+    @Environment(PlaylistStore.self) private var playlists
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var scrollOffset: CGFloat = 0
@@ -174,7 +175,8 @@ struct HomeView: View {
                     .lineLimit(1)
 
                 // 三列时卡片只有 ~113pt 宽，长副标题会被截断，只留数量
-                Text("\(playlist.count) 首")
+                // 数量跟着真实曲库走 —— 远程拉到了就是 30 首，没拉到就是本地选曲数
+                Text("\(playlists.songs(for: playlist).count) 首")
                     .font(LiquidTheme.Typography.caption)
                     .foregroundStyle(LiquidTheme.Palette.secondary)
                     .lineLimit(1)

@@ -318,20 +318,30 @@ cd api-enhanced && npm install && node app.js     # 默认 3000 端口
 
 ### 歌单数据
 
-`Playlist.count` **由 `songIDs` 推导**，不是独立字段。
+歌单曲目来自 **`PlaylistStore`**：启动时按关键词从网易云拉真实的 30 首；
+拉不到就退回本地选曲（`songIDs`）。**数量跟着真实内容走，不写死。**
 
-> 之前 `count` 是写死的 30 / 60 / 100 / 50 / 36 / 52，但 `songIDs` 全是
-> `songs.map(\.id)`（整库 8 首），于是出现「**30 首 · 31 分钟**」这种自相矛盾的显示。
+| 歌单 | 来源 |
+|---|---|
+| 每日推荐 | `/personalized/newsong`（新歌速递） |
+| 民谣 / 抖音热曲 / 飙升榜 / 华语新声 / 电子浪潮 | `/search?keywords=` 各取 30 条 |
+
+> 为什么「每日推荐」不用搜索：搜关键词是搜不出"推荐"的，只会返回名字里带这个词的歌。
 >
-> 更隐蔽的是 `PlaylistDetailView` 里写着 `private var songs: [Song] { MusicLibrary.songs }` ——
-> **歌单的 `songIDs` 完全没被用上**，点进任何歌单都是整库 8 首，按库顺序排。
-> 现在按 `songIDs` 解析并保持顺序。
+> **封面要单独补**：`/search` 只给 `picId` 不给地址，`/song/detail?ids=` 才有 `al.picUrl`。
+> 一次批量传 30 个 id，不要逐条请求。拿到后把 URL 直接塞进 `Song.artworkName`，
+> `ArtworkView` 认得 `http` 开头的名字，走 `AsyncImage`。
 
-歌单的选曲用 `dailyPick(count:salt:)`：**按「年内第几天」做种子的确定性洗牌**。
-同一天内结果固定，隔天换一批 —— 这才对得上「每天 6:00 更新」。
-不能用 `shuffle()`（每次启动都变），也不能用 `hashValue`（每次启动随机化）。
+**历史坑（已修）：** `Playlist.count` 曾是写死的 30/60/100…，而 `songIDs` 全是整库 8 首；
+更隐蔽的是 `PlaylistDetailView` 里 `songs` 直接返回 `MusicLibrary.songs` ——
+**歌单的 `songIDs` 完全没被用上**，点进任何歌单都是整库 8 首、按库顺序。
+于是出现「30 首 · 31 分钟」这种自相矛盾的显示。
 
-`飙升榜` 例外，按真实 `plays` 排序，不做随机。
+`dailyPick(count:salt:)` 仍保留，作为**本地兜底**的选曲：按「年内第几天」做种子的确定性洗牌，
+同一天固定、隔天换批，对得上「每天 6:00 更新」。不能用 `shuffle()`（每次启动都变）。
+
+> ⚠️ 远程曲库依赖自建的 API 服务。服务没起时会静默退回本地选曲，
+> 歌单变成 4–8 首 —— 数字仍然是真实的，只是内容少。
 
 ### 纵向节奏
 

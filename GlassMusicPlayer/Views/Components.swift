@@ -12,7 +12,16 @@ struct ArtworkView: View {
         // 直接对 Image 用 scaledToFill 会让布局宽度按短边撑开，撑爆父容器。
         Color.clear
             .overlay {
-                if let image = UIImage(named: name) {
+                if name.hasPrefix("http") {
+                    // 远程封面（网易云等）：走异步加载，加载中/失败都退回兜底渐变
+                    AsyncImage(url: URL(string: name)) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            FallbackArtwork(seed: name)
+                        }
+                    }
+                } else if let image = UIImage(named: name) {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()

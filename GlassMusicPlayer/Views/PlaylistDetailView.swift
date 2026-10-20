@@ -5,20 +5,17 @@ struct PlaylistDetailView: View {
     let playlist: Playlist
 
     @Environment(PlayerModel.self) private var player
+    @Environment(PlaylistStore.self) private var playlists
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var scrollOffset: CGFloat = 0
 
-    /// 按 `playlist.songIDs` 的顺序解析曲目。
+    /// 曲目统一从 `PlaylistStore` 取：远程拉到了就用网易云的 30 首，否则退回本地选曲。
     ///
     /// 之前这里直接返回 `MusicLibrary.songs` —— 歌单的 `songIDs` 完全没被用上，
-    /// 于是每个歌单点进去都是整库 8 首，和「每日推荐」之类的标题对不上。
-    /// 保持 songIDs 的顺序（每日推荐是洗过牌的）。
-    private var songs: [Song] {
-        let byID = Dictionary(uniqueKeysWithValues: MusicLibrary.songs.map { ($0.id, $0) })
-        return playlist.songIDs.compactMap { byID[$0] }
-    }
+    /// 点进任何歌单都是整库 8 首。
+    private var songs: [Song] { playlists.songs(for: playlist) }
 
     /// 滚动 0…260 时，封面从 1 缩到 0.72
     private var coverScale: CGFloat {
@@ -82,7 +79,7 @@ struct PlaylistDetailView: View {
                     .foregroundStyle(LiquidTheme.Palette.secondary)
                     .multilineTextAlignment(.center)
 
-                Text("\(playlist.count) 首 · \(totalDuration)")
+                Text("\(songs.count) 首 · \(totalDuration)")
                     .font(LiquidTheme.Typography.caption)
                     .foregroundStyle(LiquidTheme.Palette.tertiary)
             }

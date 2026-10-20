@@ -29,6 +29,8 @@ enum NeteaseAPI {
         let album: String
         /// 秒
         let duration: Double
+        /// 封面地址（搜索接口不返回，靠 `/song/detail` 补）
+        var cover: URL?
 
         var durationText: String { Song.timeText(duration) }
     }
@@ -74,6 +76,54 @@ enum NeteaseAPI {
         }
     }
 
+    /// 新歌速递。「每日推荐」用它 —— 搜索某个关键词是搜不出"推荐"的。
+    /// 这个接口的返回结构和 `/search` 不同，曲目信息藏在 `song` 里。
+    static func newsong(limit: Int = 30) async throws -> [Track] {
+        let json = try await get("/personalized/newsong", ["limit": String(limit)])
+        guard let items = json["result"] as? [[String: Any]] else { throw Failure.badResponse }
+
+        return items.compactMap { item in
+            guard let inner = item["song"] as? [String: Any],
+                  let id = inner["id"] as? Int,
+                  let name = inner["name"] as? String else { return nil }
+
+            let artists = (inner["artists"] as? [[String: Any]])?
+                .compactMap { $0["name"] as? String }
+                .joined(separator: " / ") ?? "未知艺人"
+
+            let album = inner["album"] as? [String: Any]
+            let ms = inner["duration"] as? Double ?? 0
+            let pic = (album?["picUrl"] as? String) ?? (item["picUrl"] as? String)
+
+            return Track(
+                id: id,
+                title: name,
+                artist: artists,
+                album: album?["name"] as? String ?? "",
+                duration: ms / 1000,
+                cover: pic.flatMap { URL(string: $0.replacingOccurrences(of: "http://", with: "https://")) }
+            )
+        }
+    }
+
+    /// 批量补封面。`/search` 只给 `picId` 不给地址，`/song/detail` 才有 `al.picUrl`。
+    /// 一次传多个 id，别一条一条来。
+    static func covers(ids: [Int]) async throws -> [Int: URL] {
+        guard !ids.isEmpty else { return [:] }
+        let json = try await get("/song/detail", ["ids": ids.map(String.init).joined(separator: ",")])
+        guard let songs = json["songs"] as? [[String: Any]] else { return [:] }
+
+        var result: [Int: URL] = [:]
+        for song in songs {
+            guard let id = song["id"] as? Int,
+                  let raw = (song["al"] as? [String: Any])?["picUrl"] as? String,
+                  let url = URL(string: raw.replacingOccurrences(of: "http://", with: "https://"))
+            else { continue }
+            result[id] = url
+        }
+        return result
+    }
+
     /// 取播放地址。
     ///
     /// 返回的常常是 `http://m7xx.music.126.net/...`，这里统一换成 https ——
@@ -116,6 +166,8 @@ enum NeteaseAPI {
 extension NeteaseAPI.Track {
     /// 转成可播放曲目。播放地址不在这里取 —— 交给 `PlayerModel.loadCurrent` 按需解析，
     /// 否则一搜 20 条就要发 20 个请求。
+    ///
+    /// `artworkName` 直接放封面 URL（没有就放 id），`ArtworkView` 认得 `http` 开头的名字。
     var song: Song {
         Song(
             title: title,
@@ -124,7 +176,7 @@ extension NeteaseAPI.Track {
             duration: duration,
             year: Calendar.current.component(.year, from: Date()),
             plays: 0,
-            artworkName: "netease_\(id)",
+            artworkName: cover?.absoluteString ?? "netease_\(id)",
             lyrics: [],
             source: .netease(id: id)
         )
