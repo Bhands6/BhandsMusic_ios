@@ -12,21 +12,30 @@ struct QueueView: View {
         ZStack(alignment: .top) {
             ArtworkBackdrop(artworkName: player.current.artworkName)
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: LiquidTheme.Spacing.lg) {
-                        nowPlayingSection
-                        queueSection
-                    }
+            // 只有歌曲列表在滚 —— 顶部「正在播放」卡片和「队列」标题固定不动。
+            // 整页一起滚的话，往下翻歌单时那两张卡片会跟着滚走，
+            // 队列页的"当前在播什么"就丢了。
+            VStack(alignment: .leading, spacing: 0) {
+                nowPlayingSection
                     .padding(.top, 72)
-                    .padding(.bottom, 40)
-                }
-                // 能滚，但不显示滚动条 —— 队列页是全屏沉浸式，右侧一条灰线会破坏氛围。
-                // 位置感交给标题旁的「5 / 20」。
-                .scrollIndicators(.hidden)
-                .onAppear {
-                    // 进来就定位到正在播放那首，前后都能滚
-                    proxy.scrollTo(player.current.id, anchor: .center)
+
+                queueHeader
+                    .padding(.top, LiquidTheme.Spacing.lg)
+
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        queueList
+                            .padding(.bottom, 40)
+                    }
+                    // 能滚，但不显示滚动条 —— 全屏沉浸式，右侧一条灰线破坏氛围。
+                    // 位置感交给标题旁的「1 / 20」。
+                    .scrollIndicators(.hidden)
+                    // 卡片别贴着屏幕底边，留出呼吸空间
+                    .padding(.bottom, 28)
+                    .onAppear {
+                        // 进来就定位到正在播放那首，前后都能滚
+                        proxy.scrollTo(player.current.id, anchor: .center)
+                    }
                 }
             }
 
@@ -95,37 +104,47 @@ struct QueueView: View {
 
     // MARK: - 接下来播放
 
-    private var queueSection: some View {
-        VStack(alignment: .leading, spacing: LiquidTheme.Spacing.sm) {
-            HStack {
-                sectionTitle("队列")
-                Spacer()
-                Text("\(player.currentIndex + 1) / \(player.queue.count)")
-                    .font(LiquidTheme.Typography.rowMeta)
-                    .foregroundStyle(LiquidTheme.Palette.onDarkSoft)
-            }
-            .padding(.trailing, LiquidTheme.Spacing.screenH)
+    /// 标题行，固定在列表上方不滚。
+    /// 这里不用 `sectionTitle` —— 它自带水平内边距，套在 HStack 里会双倍缩进。
+    private var queueHeader: some View {
+        HStack {
+            Text("队列")
+                .font(LiquidTheme.Typography.section)
+                .foregroundStyle(LiquidTheme.Palette.onDark)
 
-            VStack(spacing: 0) {
-                // 整条队列全列出来 —— 往上能看听过，往下能看还没播的。
-                // 之前只给 `upNext`，听过的歌在界面上根本找不到。
-                ForEach(Array(player.queue.enumerated()), id: \.element.id) { index, song in
-                    if index > 0 {
-                        Rectangle()
-                            .fill(LiquidTheme.Palette.separator.opacity(0.5))
-                            .frame(height: 0.5)
-                            .padding(.leading, 68)
-                    }
+            Spacer()
 
-                    queueRow(song, index: index)
-                }
-            }
-            .background(
-                LiquidTheme.Palette.card,
-                in: RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous)
-            )
-            .padding(.horizontal, LiquidTheme.Spacing.screenH)
+            Text("\(player.currentIndex + 1) / \(player.queue.count)")
+                .font(LiquidTheme.Typography.rowMeta)
+                .foregroundStyle(LiquidTheme.Palette.onDarkSoft)
         }
+        .padding(.horizontal, LiquidTheme.Spacing.screenH)
+        .padding(.bottom, LiquidTheme.Spacing.sm)
+    }
+
+    /// 可滚动部分：整条队列
+    private var queueList: some View {
+        VStack(spacing: 0) {
+            // 整条队列全列出来 —— 往上能看听过，往下能看还没播的。
+            // 之前只给 `upNext`，听过的歌在界面上根本找不到。
+            ForEach(Array(player.queue.enumerated()), id: \.element.id) { index, song in
+                if index > 0 {
+                    Rectangle()
+                        .fill(LiquidTheme.Palette.separator.opacity(0.5))
+                        .frame(height: 0.5)
+                        .padding(.leading, 68)
+                }
+
+                queueRow(song, index: index)
+            }
+        }
+        .background(
+            LiquidTheme.Palette.card,
+            in: RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous)
+        )
+        // 滚动时行不能溢出圆角
+        .clipShape(RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous))
+        .padding(.horizontal, LiquidTheme.Spacing.screenH)
     }
 
     private func queueRow(_ song: Song, index: Int) -> some View {
