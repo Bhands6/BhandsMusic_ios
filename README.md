@@ -316,6 +316,23 @@ cd api-enhanced && npm install && node app.js     # 默认 3000 端口
 > 拿它做上架应用会被审核拒绝，也不符合网易云的服务条款。
 > 要上线只能用「打包音轨 + 公开电台」这两条合法路径。
 
+### 歌单数据
+
+`Playlist.count` **由 `songIDs` 推导**，不是独立字段。
+
+> 之前 `count` 是写死的 30 / 60 / 100 / 50 / 36 / 52，但 `songIDs` 全是
+> `songs.map(\.id)`（整库 8 首），于是出现「**30 首 · 31 分钟**」这种自相矛盾的显示。
+>
+> 更隐蔽的是 `PlaylistDetailView` 里写着 `private var songs: [Song] { MusicLibrary.songs }` ——
+> **歌单的 `songIDs` 完全没被用上**，点进任何歌单都是整库 8 首，按库顺序排。
+> 现在按 `songIDs` 解析并保持顺序。
+
+歌单的选曲用 `dailyPick(count:salt:)`：**按「年内第几天」做种子的确定性洗牌**。
+同一天内结果固定，隔天换一批 —— 这才对得上「每天 6:00 更新」。
+不能用 `shuffle()`（每次启动都变），也不能用 `hashValue`（每次启动随机化）。
+
+`飙升榜` 例外，按真实 `plays` 排序，不做随机。
+
 ### 纵向节奏
 
 | 层级 | 值 |

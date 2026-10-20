@@ -10,7 +10,15 @@ struct PlaylistDetailView: View {
 
     @State private var scrollOffset: CGFloat = 0
 
-    private var songs: [Song] { MusicLibrary.songs }
+    /// 按 `playlist.songIDs` 的顺序解析曲目。
+    ///
+    /// 之前这里直接返回 `MusicLibrary.songs` —— 歌单的 `songIDs` 完全没被用上，
+    /// 于是每个歌单点进去都是整库 8 首，和「每日推荐」之类的标题对不上。
+    /// 保持 songIDs 的顺序（每日推荐是洗过牌的）。
+    private var songs: [Song] {
+        let byID = Dictionary(uniqueKeysWithValues: MusicLibrary.songs.map { ($0.id, $0) })
+        return playlist.songIDs.compactMap { byID[$0] }
+    }
 
     /// 滚动 0…260 时，封面从 1 缩到 0.72
     private var coverScale: CGFloat {

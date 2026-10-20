@@ -90,10 +90,15 @@ struct Playlist: Identifiable, Hashable {
     let id = UUID()
     let title: String
     let subtitle: String
-    let count: Int
     let symbol: String
     let colors: [Color]
     let songIDs: [UUID]
+
+    /// 曲目数**由 `songIDs` 推导**，不再单独写死。
+    ///
+    /// 之前是独立字段，写的是 30 / 60 / 100…，但 `songIDs` 只放了整库 8 首 ——
+    /// 于是出现「30 首 · 31 分钟」这种自相矛盾的显示。
+    var count: Int { songIDs.count }
 }
 
 // MARK: - 艺人
@@ -246,56 +251,70 @@ enum MusicLibrary {
 
     // MARK: 歌单
 
+    /// 确定性洗牌：同一天内结果固定，隔天换一批。
+    ///
+    /// 用线性同余生成器而不是 `shuffle()` —— 后者每次启动都不同，
+    /// 「每天 6:00 更新」的语义就变成「每次打开都变」了。
+    /// `salt` 用来让不同歌单取到不同的排列。
+    static func dailyPick(_ count: Int, salt: UInt64) -> [UUID] {
+        let day = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1
+        var seed = UInt64(day) &* 7919 &+ salt &* 104_729 &+ 12_345
+
+        var pool = songs
+        var picked: [Song] = []
+        while picked.count < min(count, songs.count), !pool.isEmpty {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            let index = Int(seed >> 33) % pool.count
+            picked.append(pool.remove(at: index))
+        }
+        return picked.map(\.id)
+    }
+
     static let playlists: [Playlist] = [
         Playlist(
             title: "每日推荐",
             subtitle: "每天 6:00 更新",
-            count: 30,
             symbol: "calendar",
             colors: [Color(hex: 0xFFB347), Color(hex: 0xFF6B6B)],
-            songIDs: songs.map(\.id)
+            songIDs: dailyPick(6, salt: 0)
         ),
         Playlist(
             title: "民谣",
             subtitle: "吉他与人声",
-            count: 60,
             symbol: "guitars.fill",
             colors: [Color(hex: 0x7A9A3F), Color(hex: 0xD4C685)],
-            songIDs: songs.map(\.id)
+            songIDs: dailyPick(4, salt: 1)
         ),
         Playlist(
             title: "抖音热曲",
             subtitle: "全网热播",
-            count: 100,
             symbol: "flame.fill",
             // 红 → 青在 RGB 里直接插值会经过灰色，中段糊成脏粉。
             // 中间插一个饱和紫，路径才一直在高饱和区。
             colors: [Color(hex: 0xFE2C55), Color(hex: 0xA82AC7), Color(hex: 0x25F4EE)],
-            songIDs: songs.map(\.id)
+            songIDs: dailyPick(5, salt: 2)
         ),
         Playlist(
             title: "飙升榜",
             subtitle: "热度上升最快",
-            count: 50,
             symbol: "chart.line.uptrend.xyaxis",
             colors: [Color(hex: 0x7B2FF7), Color(hex: 0xE10098)],
-            songIDs: songs.map(\.id)
+            // 榜单按真实播放量排，不做随机
+            songIDs: songs.sorted { $0.plays > $1.plays }.map(\.id)
         ),
         Playlist(
             title: "华语新声",
-            subtitle: "编辑部精选 · 本周 36 首",
-            count: 36,
+            subtitle: "编辑部精选",
             symbol: "sparkles",
             colors: [Color(hex: 0xD63031), Color(hex: 0xFDCB6E)],
-            songIDs: songs.map(\.id)
+            songIDs: dailyPick(4, salt: 3)
         ),
         Playlist(
             title: "电子浪潮",
             subtitle: "从地下俱乐部到主舞台",
-            count: 52,
             symbol: "waveform",
             colors: [Color(hex: 0x6C5CE7), Color(hex: 0x00CEC9)],
-            songIDs: songs.map(\.id)
+            songIDs: dailyPick(5, salt: 4)
         )
     ]
 
