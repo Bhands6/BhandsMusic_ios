@@ -124,6 +124,57 @@ enum NeteaseAPI {
         return result
     }
 
+    /// 取歌词并解析成时间轴。
+    ///
+    /// `/lyric` 返回的是 LRC 文本，形如 `[00:12.34]歌词`；
+    /// 一行可能有多个时间戳（`[00:12.34][01:20.56]副歌`），都要展开。
+    /// 返回空数组表示这首歌确实没有歌词（纯音乐）。
+    static func lyrics(for id: Int) async throws -> [LyricLine] {
+        let json = try await get("/lyric", ["id": String(id)])
+        guard let raw = (json["lrc"] as? [String: Any])?["lyric"] as? String, !raw.isEmpty else {
+            return []
+        }
+        return parseLRC(raw)
+    }
+
+    /// LRC 解析。只认 `[mm:ss.xx]` 这种数字时间戳，
+    /// `[ti:]` / `[ar:]` / `[by:]` 这类元信息会被正则自然跳过。
+    static func parseLRC(_ raw: String) -> [LyricLine] {
+        let pattern = try? NSRegularExpression(pattern: #"\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]"#)
+        guard let pattern else { return [] }
+
+        var lines: [LyricLine] = []
+        for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine)
+            let range = NSRange(line.startIndex..., in: line)
+
+            let matches = pattern.matches(in: line, range: range)
+            guard !matches.isEmpty else { continue }
+
+            // 去掉所有时间戳，剩下的就是歌词文本
+            let text = pattern.stringByReplacingMatches(in: line, range: range, withTemplate: "")
+                .trimmingCharacters(in: .whitespaces)
+            guard !text.isEmpty else { continue }
+
+            for match in matches {
+                guard let minuteRange = Range(match.range(at: 1), in: line),
+                      let secondRange = Range(match.range(at: 2), in: line),
+                      let minutes = Double(line[minuteRange]),
+                      let seconds = Double(line[secondRange])
+                else { continue }
+
+                // 毫秒部分可能是 2 位（厘秒）或 3 位
+                var fraction = 0.0
+                if let msRange = Range(match.range(at: 3), in: line), let raw = Double(line[msRange]) {
+                    fraction = raw / pow(10, Double(String(line[msRange]).count))
+                }
+                lines.append(LyricLine(text: text, time: minutes * 60 + seconds + fraction))
+            }
+        }
+
+        return lines.sorted { $0.time < $1.time }
+    }
+
     /// 取播放地址。
     ///
     /// 返回的常常是 `http://m7xx.music.126.net/...`，这里统一换成 https ——

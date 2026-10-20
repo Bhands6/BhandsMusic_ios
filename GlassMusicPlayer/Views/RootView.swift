@@ -188,6 +188,15 @@ enum DebugLaunch {
         #endif
     }
 
+    /// `-lyrics 1` 启动即展开歌词视图，用来截图验证歌词解析。
+    static var opensLyrics: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "lyrics")
+        #else
+        return false
+        #endif
+    }
+
     /// `-playlist N` 直接打开第 N 个歌单（1 起）。截图时用来逐张验证封面。
     static var playlistIndex: Int {
         #if DEBUG

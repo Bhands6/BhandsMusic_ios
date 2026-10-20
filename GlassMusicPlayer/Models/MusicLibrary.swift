@@ -31,8 +31,9 @@ struct Song: Identifiable, Hashable {
     let year: Int
     let plays: Int
     let artworkName: String
-    /// 纯音乐留空，界面会显示「纯音乐 · 暂无歌词」
-    let lyrics: [LyricLine]
+    /// 纯音乐留空，界面会显示「纯音乐 · 暂无歌词」。
+    /// 网易云曲目在播放时才拉歌词，所以这里是 `var`。
+    var lyrics: [LyricLine]
     /// 默认是打包音轨，电台等远程源显式传入
     var source: SongSource = .bundled
 
@@ -400,7 +401,7 @@ final class PlayerModel {
     var isShuffleOn: Bool = false
     var repeatMode: RepeatMode = .off
     /// 正在播放页的歌词模式
-    var showsLyrics: Bool = false
+    var showsLyrics: Bool = DebugLaunch.opensLyrics
     /// 用户正在拖进度条 —— 期间不让播放器的进度回调覆盖手指位置
     var isSeeking: Bool = false
     private(set) var likedIDs: Set<UUID> = []
@@ -573,6 +574,13 @@ final class PlayerModel {
                 self.engine.load(url: url, duration: requested.duration, autoplay: autoplay)
                 self.isPlaying = autoplay
                 self.syncNowPlaying()
+
+                // 歌词单独拉，失败不影响播放
+                if requested.lyrics.isEmpty,
+                   let lines = try? await NeteaseAPI.lyrics(for: id),
+                   !lines.isEmpty {
+                    self.applyLyrics(lines, for: requested.id)
+                }
             }
             return
         }
@@ -605,8 +613,14 @@ final class PlayerModel {
         }
     }
 
-    private func syncNowPlaying() {
-        engine.updateNowPlaying(
+    /// 把拉到的歌词写回队列里的那一首。
+    /// 按 id 找而不是按下标 —— 期间队列可能被替换过。
+    private func applyLyrics(_ lines: [LyricLine], for songID: UUID) {
+        guard let index = queue.firstIndex(where: { $0.id == songID }) else { return }
+        queue[index].lyrics = lines
+    }
+
+    private func syncNowPlaying() {        engine.updateNowPlaying(
             title: current.title,
             artist: current.artist,
             artworkName: current.artworkName,
