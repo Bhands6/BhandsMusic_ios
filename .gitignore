@@ -16,3 +16,8 @@ build/
 # .tools/covers 是 make_covers.py 的中间产物，已复制进 Assets.xcassets
 .archive/
 .tools/covers/
+
+# 后端
+server/node_modules/
+server/.env
+server/npm-debug.log*

@@ -152,8 +152,18 @@ struct ProfileView: View {
         .buttonStyle(.plain)
     }
 
-    private var subtitleText: String {
-        guard let account = session.account else {
+    /// 服务器地址只显示主机名，太长会把行挤爆
+    private var serverSummary: String {
+        guard let url = URL(string: ServerSettings.baseURLString), let host = url.host else {
+            return "未配置"
+        }
+        if url.port == 80 || url.port == 443 || url.port == nil {
+            return host
+        }
+        return "\(host):\(url.port!)"
+    }
+
+    private var subtitleText: String {        guard let account = session.account else {
             return session.isLoading ? "正在获取账号信息…" : "点击登录网易云音乐"
         }
         return "网易云 UID \(account.id) · \(account.membershipText)"
@@ -273,6 +283,17 @@ struct ProfileView: View {
                     value: "\(MusicLibrary.songs.count) 首"
                 ) {
                     detail = .downloads
+                }
+
+                rowDivider
+
+                navigationRow(
+                    icon: "network",
+                    tint: Color(hex: 0x00B894),
+                    title: "服务器",
+                    value: serverSummary
+                ) {
+                    detail = .server
                 }
 
                 rowDivider

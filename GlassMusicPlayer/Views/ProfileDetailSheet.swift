@@ -45,6 +45,7 @@ enum ProfileDetail: String, Identifiable {
     case downloads
     case about
     case account
+    case server
 
     var id: String { rawValue }
 
@@ -54,6 +55,7 @@ enum ProfileDetail: String, Identifiable {
         case .downloads: return "已下载"
         case .about: return "关于 BhandsMusic"
         case .account: return "账号与安全"
+        case .server: return "服务器"
         }
     }
 }
@@ -65,6 +67,13 @@ struct ProfileDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(NeteaseSession.self) private var session
     @State private var quality = AudioQuality.current
+    @State private var serverURL = ServerSettings.baseURLString
+    @State private var apiKey = ServerSettings.apiKey
+    @State private var probeState: ProbeState = .idle
+
+    enum ProbeState: Equatable {
+        case idle, testing, ok, failed(String)
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -116,6 +125,116 @@ struct ProfileDetailSheet: View {
         case .downloads: downloadsContent
         case .about: aboutContent
         case .account: accountContent
+        case .server: serverContent
+        }
+    }
+
+    // MARK: - 服务器
+
+    private var serverContent: some View {
+        VStack(alignment: .leading, spacing: LiquidTheme.Spacing.sm) {
+            VStack(spacing: 0) {
+                fieldRow("地址", placeholder: "https://api.example.com", text: $serverURL)
+                divider
+                fieldRow("密钥", placeholder: "留空表示服务端未开鉴权", text: $apiKey)
+            }
+            .glassPanel()
+            .padding(.horizontal, LiquidTheme.Spacing.screenH)
+
+            HStack(spacing: LiquidTheme.Spacing.sm) {
+                Button {
+                    ServerSettings.baseURLString = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                    ServerSettings.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                    Task { await probe() }
+                } label: {
+                    Text("保存并测试")
+                        .font(LiquidTheme.Typography.button)
+                        .foregroundStyle(LiquidTheme.Palette.onAccent)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: LiquidTheme.Hit.control)
+                        .background(Capsule().fill(LiquidTheme.Palette.accent))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, LiquidTheme.Spacing.screenH)
+
+            probeLine
+
+            Text("模拟器可以用 localhost；真机要填局域网 IP（如 http://192.168.1.5:3000）或部署后的域名。\n用 HTTPS 的话不需要额外配置。")
+                .font(LiquidTheme.Typography.caption)
+                .foregroundStyle(LiquidTheme.Palette.tertiary)
+                .padding(.horizontal, LiquidTheme.Spacing.screenH)
+        }
+    }
+
+    @ViewBuilder
+    private var probeLine: some View {
+        switch probeState {
+        case .idle:
+            EmptyView()
+        case .testing:
+            Label("正在测试…", systemImage: "clock")
+                .font(LiquidTheme.Typography.caption)
+                .foregroundStyle(LiquidTheme.Palette.secondary)
+                .padding(.horizontal, LiquidTheme.Spacing.screenH)
+        case .ok:
+            Label("连接正常", systemImage: "checkmark.circle.fill")
+                .font(LiquidTheme.Typography.caption)
+                .foregroundStyle(Color(hex: 0x00B894))
+                .padding(.horizontal, LiquidTheme.Spacing.screenH)
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(LiquidTheme.Typography.caption)
+                .foregroundStyle(Color(hex: 0xD63031))
+                .padding(.horizontal, LiquidTheme.Spacing.screenH)
+        }
+    }
+
+    private func fieldRow(_ title: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(LiquidTheme.Typography.rowMeta)
+                .foregroundStyle(LiquidTheme.Palette.secondary)
+
+            TextField(placeholder, text: text)
+                .font(LiquidTheme.Typography.rowTitle)
+                .foregroundStyle(LiquidTheme.Palette.label)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+        }
+        .padding(.horizontal, LiquidTheme.Spacing.md)
+        .padding(.vertical, 10)
+    }
+
+    /// 打一次 `/healthz`。这个接口不需要鉴权，专门用来探活。
+    private func probe() async {
+        probeState = .testing
+        defer { }
+
+        guard let base = URL(string: ServerSettings.baseURLString) else {
+            probeState = .failed("地址格式不对")
+            return
+        }
+
+        var request = URLRequest(url: base.appendingPathComponent("healthz"))
+        request.timeoutInterval = 8
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                probeState = .failed("服务返回 \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                return
+            }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let needsKey = json?["authRequired"] as? Bool ?? false
+            if needsKey && ServerSettings.apiKey.isEmpty {
+                probeState = .failed("服务已开鉴权，请填写密钥")
+            } else {
+                probeState = .ok
+            }
+        } catch {
+            probeState = .failed("连不上：\(error.localizedDescription)")
         }
     }
 

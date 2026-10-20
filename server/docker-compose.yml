@@ -1,0 +1,23 @@
+services:
+  api:
+    build: .
+    image: bhandsmusic-server:latest
+    container_name: bhandsmusic-server
+    restart: unless-stopped
+    ports:
+      # 只绑本机，让 Nginx / Caddy 反代；要直接暴露改成 "3000:3000"
+      - "127.0.0.1:3000:3000"
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      # 从 .env 读，没设就是空（不鉴权）
+      API_KEY: ${API_KEY:-}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
+      UPSTREAM_TIMEOUT_MS: ${UPSTREAM_TIMEOUT_MS:-8000}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      LOG_LEVEL: info
+    # 内存上限，防止异常流量把宿主机拖死
+    deploy:
+      resources:
+        limits:
+          memory: 512M

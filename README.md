@@ -318,6 +318,14 @@ enum SongSource {
 
 #### 网易云（需要自建服务）
 
+仓库里的 **`server/`** 就是一份可直接部署的封装（鉴权 + 限流 + 缓存），
+路径与上游完全一致 —— App 只要改地址就能切过去，不用改代码。
+部署说明见 [`server/README.md`](server/README.md)。
+
+App 侧的地址在「我的 → 服务器」里填，支持填 API 密钥并一键测试连通性。
+
+下面是直接用上游 `api-enhanced` 的方式（不经过 `server/`）：
+
 ```bash
 git clone https://github.com/88lin/api-enhanced
 cd api-enhanced && npm install && node app.js     # 默认 3000 端口

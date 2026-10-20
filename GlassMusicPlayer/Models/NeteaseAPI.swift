@@ -1,24 +1,41 @@
 import Foundation
 
+/// 后端地址与访问密钥。
+///
+/// 部署到服务器后，在「我的 → 服务器」里填地址，不用改代码重新编译。
+enum ServerSettings {
+    static let defaultURL = "http://localhost:3456"
+
+    static var baseURLString: String {
+        get { UserDefaults.standard.string(forKey: "ncmBaseURL") ?? defaultURL }
+        set { UserDefaults.standard.set(newValue, forKey: "ncmBaseURL") }
+    }
+
+    static var apiKey: String {
+        get { UserDefaults.standard.string(forKey: "ncmAPIKey") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "ncmAPIKey") }
+    }
+}
+
 /// 网易云音乐 API 客户端。
 ///
 /// 后端用的是社区维护的 [NeteaseCloudMusicApi Enhanced](https://github.com/88lin/api-enhanced)，
 /// 需要自己起一份（`node app.js`，默认 3000 端口），再把 `baseURL` 指过去。
 ///
-/// **为什么要自己部署**：原版 Binaryify 的仓库 2024 年停更，网易改了协议（xeapi），
-/// 老版本拿不到播放地址。Enhanced 版跟进了新协议，但它是个 Node 服务，必须单独跑。
+/// 仓库里的 `server/` 就是一份可直接部署的封装（鉴权 + 限流 + 缓存），
+/// 路径与上游保持一致，所以 App 这边只要改地址。
 ///
 /// ⚠️ 非官方接口，仅供个人学习使用。曲库版权归网易云所有，
 /// 用它的内容做上架应用会被审核拒绝，也不符合网易云的服务条款。
 enum NeteaseAPI {
 
-    /// 后端地址。默认指向本机 —— 模拟器可以直接访问 Mac 的 localhost。
-    /// 部署到公网后改这里（或用 `-ncm <url>` 启动参数覆盖）。
+    /// 后端地址。`-ncm <url>` 启动参数 > 「我的 → 服务器」里的设置 > 默认本机。
+    /// 模拟器可以直接访问 Mac 的 localhost；真机要填局域网 IP 或部署后的域名。
     static var baseURL: URL {
         if let override = UserDefaults.standard.string(forKey: "ncm"), let url = URL(string: override) {
             return url
         }
-        return URL(string: "http://localhost:3456")!
+        return URL(string: ServerSettings.baseURLString) ?? URL(string: ServerSettings.defaultURL)!
     }
 
     /// 一条搜索结果。只保留界面用得到的字段。
@@ -289,6 +306,11 @@ enum NeteaseAPI {
         // 登录后所有请求都带上 cookie（NeteaseCloudMusicApi 认 query 参数）
         if let cookie = NeteaseSession.shared.cookie {
             merged["cookie"] = cookie
+        }
+        // 自建后端设了 API_KEY 的话，每个请求都要带上
+        let key = ServerSettings.apiKey
+        if !key.isEmpty {
+            merged["key"] = key
         }
 
         var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
