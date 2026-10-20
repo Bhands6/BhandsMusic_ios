@@ -66,19 +66,10 @@ struct PlaylistDetailView: View {
                 .environment(player)
                 .presentationBackground(.clear)
         }
-        .onAppear {
-            // 截图/自动化用：模拟器点不了列表，-autoplay 时自动点第一行，
-            // 验证「点歌 → 播放 + 打开播放页」这条链。
-            // 等 4 秒是刻意的 —— 真实用户点歌时远程曲库早就加载完了，
-            // 立刻触发会点到本地兜底列表，验证的就不是真实时序。
-            guard DebugLaunch.autoplays else { return }
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(4))
-                guard !songs.isEmpty else { return }
-                player.play(at: 0, in: songs)
-                showsNowPlaying = true
-            }
-        }
+        // 注意：**进页面不自动播放**，也不改变当前曲目。
+        // 之前这里有个 -autoplay 的截图钩子会自动点第一行，
+        // 导致一进歌单页第一首就被高亮/开始播 —— 已移除。
+        // 自动化验证改由 -playlist N 只打开页面、不触发播放。
     }
 
     // MARK: - 封面
