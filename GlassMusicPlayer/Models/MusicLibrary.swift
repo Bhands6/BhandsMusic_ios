@@ -40,6 +40,19 @@ struct Song: Identifiable, Hashable {
     /// 直播流：没有时长、不能拖进度
     var isLive: Bool { duration <= 0 }
 
+    /// **身份只看 `id`。**
+    ///
+    /// 不能用编译器合成的 `==` —— 那会比较所有字段，包括可变的 `lyrics`。
+    /// 而网易云的歌词是运行时才补进队列的：补完之后，队列里这个 `Song`
+    /// 就和歌单数组里的"同一个"不相等了，`firstIndex(of:)` 会返回 nil，
+    /// 于是 `?? 0` 兜底到第一首 —— 表现就是「点了第 3 首，播的是第 1 首」。
+    ///
+    /// 顺带解决另一个隐患：`lyrics` 是 `var`，哈希值会随歌词变化而变，
+    /// 放进 Set / Dictionary 就会丢。绑到不可变的 `id` 上才安全。
+    static func == (lhs: Song, rhs: Song) -> Bool { lhs.id == rhs.id }
+
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
     var durationText: String { isLive ? "直播" : Song.timeText(duration) }
 
     /// 音频资源名：和封面同名（`cover_ink_rivers` → `ink_rivers`）
@@ -467,6 +480,16 @@ final class PlayerModel {
         } else {
             likedIDs.insert(song.id)
         }
+    }
+
+    /// 按下标播放。**列表点击一律走这个** —— 不做任何"按内容匹配"，
+    /// 点第几行就播第几行，不可能错位。
+    func play(at index: Int, in list: [Song]) {
+        guard list.indices.contains(index) else { return }
+        history.removeAll()
+        queue = list
+        currentIndex = index
+        loadCurrent(autoplay: true)
     }
 
     /// 从某个列表点播一首歌 —— 队列会被替换成这个列表

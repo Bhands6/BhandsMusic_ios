@@ -99,7 +99,7 @@ struct PlaylistDetailView: View {
     private var actions: some View {
         HStack(spacing: LiquidTheme.Spacing.sm) {
             Button {
-                if let first = songs.first { player.play(first, in: songs) }
+                player.play(at: 0, in: songs)
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "play.fill")
@@ -155,7 +155,8 @@ struct PlaylistDetailView: View {
                     isPlaying: player.isPlaying,
                     isLiked: player.isLiked(song)
                 ) {
-                    player.play(song, in: songs)
+                    // 按行号播，不做内容匹配 —— 点第几行就是第几行
+                    player.play(at: index, in: songs)
                 }
             }
         }
