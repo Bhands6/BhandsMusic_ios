@@ -17,7 +17,10 @@ final class AudioEngine {
     private let player = AVPlayer()
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
+    /// 用于进度换算的分母（0 时长会被抬到 1，避免除零）
     private var duration: Double = 1
+    /// 真实时长。0 表示直播流 —— 锁屏按 live stream 展示，不显示进度。
+    private var realDuration: Double = 0
 
     /// 进度回调（0...1），主队列
     var onProgress: ((Double) -> Void)?
@@ -47,7 +50,9 @@ final class AudioEngine {
     // MARK: - 装载与传输控制
 
     /// 装载一首歌。`duration` 用曲目数据里的值，避免依赖资源元信息。
+    /// 传 0 表示直播流。
     func load(url: URL, duration: Double, autoplay: Bool) {
+        realDuration = duration
         self.duration = max(duration, 1)
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
         player.seek(to: .zero)
@@ -106,11 +111,16 @@ final class AudioEngine {
     ) {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
-            MPMediaItemPropertyArtist: artist,
-            MPMediaItemPropertyPlaybackDuration: duration,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
+            MPMediaItemPropertyArtist: artist
         ]
+        if realDuration > 0 {
+            info[MPMediaItemPropertyPlaybackDuration] = realDuration
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
+            info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        } else {
+            // 直播流：没有时长，告诉系统这是 live
+            info[MPNowPlayingInfoPropertyIsLiveStream] = true
+        }
         if let cover = UIImage(named: artworkName) {
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: cover.size) { _ in cover }
         }

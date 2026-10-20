@@ -12,9 +12,14 @@ struct ArtworkView: View {
         // 直接对 Image 用 scaledToFill 会让布局宽度按短边撑开，撑爆父容器。
         Color.clear
             .overlay {
-                Image(name)
-                    .resizable()
-                    .scaledToFill()
+                if let image = UIImage(named: name) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    // 资源缺失（网络电台等）不能让画面空着
+                    FallbackArtwork(seed: name)
+                }
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay {
@@ -23,6 +28,44 @@ struct ArtworkView: View {
                         .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
                 }
             }
+    }
+}
+
+/// 没有封面资源时的兜底：用名字做种子生成**稳定**的渐变 + 符号。
+///
+/// 注意不能用 `hashValue` —— Swift 每次启动都会随机化哈希种子，
+/// 同一首歌的封面会每次打开都换个颜色。这里用字符码求和，结果稳定。
+struct FallbackArtwork: View {
+    let seed: String
+
+    /// FNV-1a。不能用 `hashValue`（每次启动随机化），
+    /// 也不能简单把字符码求和 —— 分布太窄，"netease_2632426028" 和 "netease_1862565773"
+    /// 算出来只差 4%，二十条结果会全是同一个紫色。
+    private var hue: Double {
+        var hash: UInt32 = 2_166_136_261
+        for byte in seed.utf8 {
+            hash = (hash ^ UInt32(byte)) &* 16_777_619
+        }
+        return Double(hash % 360) / 360
+    }
+
+    private var isRadio: Bool { seed.hasPrefix("radio_") }
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(hue: hue, saturation: 0.52, brightness: 0.88),
+                    Color(hue: (hue + 0.10).truncatingRemainder(dividingBy: 1), saturation: 0.66, brightness: 0.54)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            Image(systemName: isRadio ? "dot.radiowaves.left.and.right" : "music.note")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.62))
+        }
     }
 }
 

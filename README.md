@@ -266,6 +266,56 @@ i–VI–III–VII 和弦进行，铺底 + 低音脉冲 + 空气感），用 `af
 
 **锁屏封面**取曲目封面（`UIImage(named: artworkName)`），不是 App 图标。
 
+### 三种音源
+
+| 音源 | 需要准备什么 | 说明 |
+|---|---|---|
+| **打包音轨** | 无 | 8 首合成环境音乐，`.tools/make_audio.py` 生成 |
+| **网络电台** | 无 | 15 个公开直播流，打开即听 |
+| **网易云** | 自建 API 服务 | 搜索 + 流播，见下方 |
+
+`SongSource` 把三者统一起来，`PlayerModel` 只认 `Song.source`：
+
+```swift
+enum SongSource {
+    case bundled              // 打包 m4a
+    case stream(URL)          // 电台直播流
+    case netease(id: Int)     // 播放时才解析地址
+}
+```
+
+#### 网络电台（推荐，零配置）
+
+电台列表取自 [88lin/lofi-radio-web](https://github.com/88lin/lofi-radio-web)（MIT），
+只保留能直连的 mp3 流并逐个实测过连通性 —— bilibili 直播间需要额外解析，已剔除。
+
+**直播流没有时长、不能拖进度**：`duration` 记为 0，`Song.isLive` 据此判断，
+正在播放页换成「● 直播中」标签而不是进度条，锁屏按 `MPNowPlayingInfoPropertyIsLiveStream` 处理。
+
+#### 网易云（需要自建服务）
+
+```bash
+git clone https://github.com/88lin/api-enhanced
+cd api-enhanced && npm install && node app.js     # 默认 3000 端口
+```
+
+然后把 `NeteaseAPI.baseURL` 指过去（默认 `http://localhost:3456`，也可用 `-ncm <url>` 覆盖）。
+
+**几个绕不开的坑：**
+
+1. **老版 NeteaseCloudMusicApi 已经不能用了。** Binaryify 的仓库 2024 年停更，
+   网易改了协议（xeapi），老版本 `/song/url` 拿不到地址。必须用 Enhanced 分支。
+2. **地址是 `http://` 的。** iOS 的 ATS 默认拦明文 HTTP，所以客户端统一把
+   `http://` 换成 `https://` —— 实测同一路径 https 可用（206），这样就不用给
+   `music.126.net` 开例外。
+3. **不要提前取地址。** 搜索结果一次 20 条，全取就是 20 个请求。
+   `loadCurrent` 在真正播放时才调 `/song/url/v1`，并校验「解析期间用户有没有切歌」。
+4. **localhost 需要 `NSAllowsLocalNetworking`。** 只开这一项，公网仍强制 HTTPS。
+
+> ⚠️ **合规提醒**：这是非官方接口，仅供个人学习。曲库版权归网易云所有，
+> 拿它做上架应用会被审核拒绝，也不符合网易云的服务条款。
+> 要上线只能用「打包音轨 + 公开电台」这两条合法路径。
+
 ### 纵向节奏
 
 | 层级 | 值 |

@@ -9,5 +9,12 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<!-- 允许访问本机的网易云 API 服务（模拟器里的 localhost）。
+	     只开「本地网络」这一项，不开 ArbitraryLoads —— 公网仍然强制 HTTPS。 -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

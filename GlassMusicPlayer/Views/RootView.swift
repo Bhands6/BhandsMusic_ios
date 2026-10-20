@@ -165,6 +165,24 @@ enum DebugLaunch {
         #endif
     }
 
+    /// `-radio N` 启动即播放第 N 个网络电台（1 起），用来验证直播流。
+    static var radioIndex: Int {
+        #if DEBUG
+        return UserDefaults.standard.integer(forKey: "radio")
+        #else
+        return 0
+        #endif
+    }
+
+    /// `-query <关键词>` 预填搜索框，用来验证联网搜索（模拟器打不了字）。
+    static var initialQuery: String {
+        #if DEBUG
+        return UserDefaults.standard.string(forKey: "query") ?? ""
+        #else
+        return ""
+        #endif
+    }
+
     /// `-playlist N` 直接打开第 N 个歌单（1 起）。截图时用来逐张验证封面。
     static var playlistIndex: Int {
         #if DEBUG

@@ -147,10 +147,16 @@ struct ArtworkBackdrop: View {
             .ignoresSafeArea()
             .overlay {
                 if let artworkName {
-                    Image(artworkName)
-                        .resizable()
-                        .scaledToFill()
-                        .blur(radius: 70, opaque: true)
+                    if let image = UIImage(named: artworkName) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .blur(radius: 70, opaque: true)
+                    } else {
+                        // 没有封面资源时用兜底渐变糊开，别让整页黑掉
+                        FallbackArtwork(seed: artworkName)
+                            .blur(radius: 70, opaque: true)
+                    }
                 }
             }
             .overlay {

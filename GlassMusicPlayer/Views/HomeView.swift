@@ -20,6 +20,7 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: LiquidTheme.Spacing.section) {
                     greeting
                     recentlyPlayedSection
+                    radioSection
                     madeForYouSection
                     newReleasesSection
                     topSongsSection
@@ -180,6 +181,66 @@ struct HomeView: View {
             }
         }
         .contentShape(Rectangle())
+    }
+
+    // MARK: - 网络电台
+
+    private var radioSection: some View {
+        VStack(alignment: .leading, spacing: LiquidTheme.Spacing.sm) {
+            SectionHeader(title: "网络电台", subtitle: "直播流 · 打开即听")
+                .padding(.horizontal, LiquidTheme.Spacing.screenH)
+
+            ScrollView(.horizontal) {
+                HStack(spacing: LiquidTheme.Spacing.sm) {
+                    ForEach(RadioCatalog.stations) { station in
+                        stationCard(station)
+                    }
+                }
+                .padding(.horizontal, LiquidTheme.Spacing.screenH)
+            }
+            .scrollIndicators(.hidden)
+        }
+    }
+
+    private func stationCard(_ station: RadioStation) -> some View {
+        let isCurrent = player.current.title == station.name
+
+        return Button {
+            // 点任意一台都按整个电台列表播，切歌即换台
+            player.play(RadioCatalog.song(for: station), in: RadioCatalog.songs)
+        } label: {
+            VStack(alignment: .leading, spacing: LiquidTheme.Spacing.xs) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [station.color.opacity(0.92), station.color.opacity(0.42)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    Image(systemName: isCurrent ? "waveform" : "dot.radiowaves.left.and.right")
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.94))
+                        .symbolEffect(.variableColor.iterative, isActive: isCurrent && player.isPlaying)
+                }
+                .frame(width: 128, height: 128)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(station.name)
+                        .font(LiquidTheme.Typography.caption.weight(.medium))
+                        .foregroundStyle(LiquidTheme.Palette.label)
+                        .lineLimit(1)
+                    Text("\(station.scene) · \(station.style)")
+                        .font(LiquidTheme.Typography.caption)
+                        .foregroundStyle(LiquidTheme.Palette.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: 128, alignment: .leading)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - 新发行

@@ -11,6 +11,17 @@ struct LyricLine: Identifiable, Hashable {
 
 // MARK: - 歌曲
 
+/// 音轨来源。
+enum SongSource: Hashable {
+    /// 打包进 App 的 m4a
+    case bundled
+    /// 网络流（电台 / 远程直链）。直播流没有时长。
+    case stream(URL)
+    /// 网易云曲目。播放地址在真正播放时才解析 ——
+    /// 搜索结果一次 20 条，提前全取就是 20 个请求。
+    case netease(id: Int)
+}
+
 struct Song: Identifiable, Hashable {
     let id = UUID()
     let title: String
@@ -22,8 +33,13 @@ struct Song: Identifiable, Hashable {
     let artworkName: String
     /// 纯音乐留空，界面会显示「纯音乐 · 暂无歌词」
     let lyrics: [LyricLine]
+    /// 默认是打包音轨，电台等远程源显式传入
+    var source: SongSource = .bundled
 
-    var durationText: String { Song.timeText(duration) }
+    /// 直播流：没有时长、不能拖进度
+    var isLive: Bool { duration <= 0 }
+
+    var durationText: String { isLive ? "直播" : Song.timeText(duration) }
 
     /// 音频资源名：和封面同名（`cover_ink_rivers` → `ink_rivers`）
     var audioName: String { artworkName.replacingOccurrences(of: "cover_", with: "") }
@@ -31,8 +47,16 @@ struct Song: Identifiable, Hashable {
     /// 打包进 App 的音轨。
     /// 同步文件夹可能把资源摊平到 bundle 根，也可能保留 `Audio/` 子目录，两种都试一下。
     var audioURL: URL? {
-        Bundle.main.url(forResource: audioName, withExtension: "m4a")
-            ?? Bundle.main.url(forResource: audioName, withExtension: "m4a", subdirectory: "Audio")
+        switch source {
+        case .stream(let url):
+            return url
+        case .netease:
+            // 地址是异步解析的，这里没有
+            return nil
+        case .bundled:
+            return Bundle.main.url(forResource: audioName, withExtension: "m4a")
+                ?? Bundle.main.url(forResource: audioName, withExtension: "m4a", subdirectory: "Audio")
+        }
     }
 
     var playsText: String {
@@ -356,7 +380,8 @@ final class PlayerModel {
 
     init() {
         engine.onProgress = { [weak self] value in
-            guard let self, !self.isSeeking else { return }
+            // 直播流没有进度可言，也不让拖拽被覆盖
+            guard let self, !self.isSeeking, !self.current.isLive else { return }
             self.progress = value
         }
         engine.onFinish = { [weak self] in
@@ -375,6 +400,12 @@ final class PlayerModel {
         // 启动时只装载不自动播 —— 一打开 App 就出声太粗暴。
         // 自动化截图时用 -autoplay 1 强制出声，验证音频链路。
         loadCurrent(autoplay: DebugLaunch.autoplays)
+
+        // -radio N 直接进某个网络电台，验证直播流
+        if DebugLaunch.radioIndex > 0 {
+            let index = min(DebugLaunch.radioIndex - 1, RadioCatalog.stations.count - 1)
+            play(RadioCatalog.song(for: RadioCatalog.stations[index]), in: RadioCatalog.songs)
+        }
     }
 
     var current: Song {
@@ -495,6 +526,23 @@ final class PlayerModel {
     private func loadCurrent(autoplay: Bool) {
         progress = 0
         isPlaying = autoplay
+
+        // 网易云：先异步取播放地址，取到再装载
+        if case .netease(let id) = current.source {
+            let requested = current
+            isPlaying = false
+
+            Task { @MainActor in
+                guard let url = try? await NeteaseAPI.streamURL(for: id) else { return }
+                // 解析期间用户可能已经切歌了
+                guard self.current.id == requested.id else { return }
+
+                self.engine.load(url: url, duration: requested.duration, autoplay: autoplay)
+                self.isPlaying = autoplay
+                self.syncNowPlaying()
+            }
+            return
+        }
 
         guard let url = current.audioURL else {
             // 找不到音轨时退化成"静音播放"，UI 仍然可操作

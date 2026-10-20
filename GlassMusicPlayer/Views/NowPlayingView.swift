@@ -31,20 +31,26 @@ struct NowPlayingView: View {
 
                 infoBlock
 
-                // 拖拽时把写入转成 seek；同时标记 isSeeking，
-                // 否则播放器的进度回调会不停覆盖手指位置，滑块会"跳回去"
-                ProgressBar(
-                    value: Binding(
-                        get: { player.progress },
-                        set: { player.seek(to: $0) }
-                    )
-                ) { editing in
-                    isScrubbing = editing
-                    player.isSeeking = editing
-                }
-                .padding(.top, LiquidTheme.Spacing.md)
+                if song.isLive {
+                    // 直播流没有时长、不能拖进度，换成状态标签
+                    liveBadge
+                        .padding(.top, LiquidTheme.Spacing.md)
+                } else {
+                    // 拖拽时把写入转成 seek；同时标记 isSeeking，
+                    // 否则播放器的进度回调会不停覆盖手指位置，滑块会"跳回去"
+                    ProgressBar(
+                        value: Binding(
+                            get: { player.progress },
+                            set: { player.seek(to: $0) }
+                        )
+                    ) { editing in
+                        isScrubbing = editing
+                        player.isSeeking = editing
+                    }
+                    .padding(.top, LiquidTheme.Spacing.md)
 
-                timeRow
+                    timeRow
+                }
 
                 transport
                     .padding(.top, LiquidTheme.Spacing.md)
@@ -175,6 +181,28 @@ struct NowPlayingView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(Text(player.isLiked(song) ? "取消喜欢" : "喜欢"))
         }
+    }
+
+    /// 直播流的状态标签，替代进度条
+    private var liveBadge: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(LiquidTheme.Palette.like)
+                .frame(width: 7, height: 7)
+                .opacity(player.isPlaying ? 1 : 0.35)
+
+            Text(player.isPlaying ? "直播中" : "已暂停")
+                .font(LiquidTheme.Typography.caption.weight(.medium))
+                .foregroundStyle(LiquidTheme.Palette.onDarkSoft)
+
+            Spacer()
+
+            Text("直播流不可拖动")
+                .font(LiquidTheme.Typography.caption)
+                .foregroundStyle(LiquidTheme.Palette.onDarkSoft.opacity(0.7))
+        }
+        .frame(height: 20)
+        .accessibilityElement(children: .combine)
     }
 
     private var timeRow: some View {

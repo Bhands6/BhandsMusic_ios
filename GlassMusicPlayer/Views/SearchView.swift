@@ -11,9 +11,14 @@ struct SearchView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var query = ""
+    @State private var query = DebugLaunch.initialQuery
     @State private var scrollOffset: CGFloat = 0
     @FocusState private var isFocused: Bool
+
+    /// 网易云搜索结果（本地库搜不到的曲目靠它兜住）
+    @State private var remoteSongs: [Song] = []
+    @State private var isSearchingRemote = false
+    @State private var remoteError: String?
 
     private let recentSearches = ["午夜霓虹", "AURORA DRIFT", "合成器浪潮", "雨天", "NOVA"]
 
@@ -38,10 +43,14 @@ struct SearchView: View {
                     if query.isEmpty {
                         recentSection
                         genreSection
-                    } else if results.isEmpty {
-                        emptyState
                     } else {
-                        resultSection
+                        if !results.isEmpty {
+                            resultSection
+                        }
+                        remoteSection
+                        if results.isEmpty && remoteSongs.isEmpty && !isSearchingRemote {
+                            emptyState
+                        }
                     }
                 }
                 .padding(.top, 76)
@@ -56,6 +65,15 @@ struct SearchView: View {
         }
         .onAppear {
             if isModal { isFocused = true }
+        }
+        .task(id: query) {
+            await searchRemote()
+
+            // 截图验证用：模拟器点不了列表，-autoplay 1 时自动播第一条，
+            // 好确认「解析地址 → 装载 → 出声」这条链真的通
+            if DebugLaunch.autoplays, let first = remoteSongs.first {
+                player.play(first, in: remoteSongs)
+            }
         }
     }
 
@@ -204,6 +222,80 @@ struct SearchView: View {
             .glassPanel()
             .padding(.horizontal, LiquidTheme.Spacing.screenH)
         }
+    }
+
+    // MARK: - 网易云结果
+
+    @ViewBuilder
+    private var remoteSection: some View {
+        if isSearchingRemote {
+            HStack(spacing: LiquidTheme.Spacing.xs) {
+                ProgressView().controlSize(.small)
+                Text("正在搜索网易云…")
+                    .font(LiquidTheme.Typography.caption)
+                    .foregroundStyle(LiquidTheme.Palette.secondary)
+            }
+            .padding(.horizontal, LiquidTheme.Spacing.screenH)
+        } else if let remoteError {
+            HStack(spacing: LiquidTheme.Spacing.xs) {
+                Image(systemName: "exclamationmark.triangle")
+                Text(remoteError)
+            }
+            .font(LiquidTheme.Typography.caption)
+            .foregroundStyle(LiquidTheme.Palette.secondary)
+            .padding(.horizontal, LiquidTheme.Spacing.screenH)
+        } else if !remoteSongs.isEmpty {
+            VStack(alignment: .leading, spacing: LiquidTheme.Spacing.sm) {
+                SectionHeader(title: "网易云音乐", subtitle: "\(remoteSongs.count) 条结果")
+                    .padding(.horizontal, LiquidTheme.Spacing.screenH)
+
+                VStack(spacing: 0) {
+                    ForEach(Array(remoteSongs.enumerated()), id: \.element.id) { index, song in
+                        if index > 0 { hairline }
+
+                        SongRow(
+                            song: song,
+                            isCurrent: song.id == player.current.id,
+                            isPlaying: player.isPlaying,
+                            isLiked: player.isLiked(song)
+                        ) {
+                            player.play(song, in: remoteSongs)
+                        }
+                    }
+                }
+                .glassPanel()
+                .padding(.horizontal, LiquidTheme.Spacing.screenH)
+            }
+        }
+    }
+
+    /// 输入防抖 400ms —— 靠 `.task(id:)` 的自动取消实现，
+    /// 每敲一个字就把上一个请求掐掉，不会打一串并发请求。
+    private func searchRemote() async {
+        let keyword = query.trimmingCharacters(in: .whitespaces)
+        guard !keyword.isEmpty else {
+            remoteSongs = []
+            remoteError = nil
+            isSearchingRemote = false
+            return
+        }
+
+        try? await Task.sleep(for: .milliseconds(400))
+        guard !Task.isCancelled else { return }
+
+        isSearchingRemote = true
+        remoteError = nil
+
+        do {
+            let tracks = try await NeteaseAPI.search(keyword)
+            guard !Task.isCancelled else { return }
+            remoteSongs = tracks.map(\.song)
+        } catch {
+            guard !Task.isCancelled else { return }
+            remoteSongs = []
+            remoteError = (error as? LocalizedError)?.errorDescription ?? "搜索失败"
+        }
+        isSearchingRemote = false
     }
 
     private var emptyState: some View {
