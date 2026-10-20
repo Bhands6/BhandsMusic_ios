@@ -3,6 +3,8 @@ import SwiftUI
 /// 我的 —— 账户与设置。整页只有悬浮头部是玻璃，其余全是实底分组卡片。
 struct ProfileView: View {
     @Environment(PlayerModel.self) private var player
+    @Environment(PlaylistStore.self) private var playlists
+    @Environment(NeteaseSession.self) private var session
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var scrollOffset: CGFloat = 0
@@ -11,6 +13,7 @@ struct ProfileView: View {
     @State private var sleepTask: Task<Void, Never>?
     @State private var detail: ProfileDetail?
     @State private var showsLogoutConfirm = false
+    @State private var showsLogin = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -46,16 +49,26 @@ struct ProfileView: View {
                 .environment(player)
         }
         .onAppear {
-            // 截图用：-detail <name> 直接打开某个详情浮层
-            if let raw = DebugLaunch.profileDetail, let parsed = ProfileDetail(rawValue: raw) {
+            // 截图用：-detail <name> 直接打开某个浮层（login 是扫码登录页）
+            guard let raw = DebugLaunch.profileDetail else { return }
+            if raw == "login" {
+                showsLogin = true
+            } else if let parsed = ProfileDetail(rawValue: raw) {
                 detail = parsed
             }
         }
+        .sheet(isPresented: $showsLogin) {
+            NeteaseLoginSheet()
+                .environment(playlists)
+        }
         .confirmationDialog("退出登录", isPresented: $showsLogoutConfirm, titleVisibility: .visible) {
-            Button("退出登录", role: .destructive) {}
+            Button("退出登录", role: .destructive) {
+                session.signOut()
+                Task { await playlists.reload() }
+            }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("演示版本没有接入真实账号，这里不会真的登出。")
+            Text("会清除本机保存的网易云登录态，「每日推荐」将退回通用榜单。")
         }
     }
 
@@ -89,45 +102,83 @@ struct ProfileView: View {
 
     // MARK: - 账户卡
 
+    /// 账户卡。未登录时显示「点击登录」，登录后显示网易云账号的真实信息。
     private var profileCard: some View {
-        HStack(spacing: LiquidTheme.Spacing.md) {
-            Image("avatar_rider")
-                .resizable()
-                .scaledToFill()
-                .frame(width: 64, height: 64)
-                .clipShape(Circle())
-                .overlay {
-                    Circle().strokeBorder(Color.white.opacity(0.16), lineWidth: 0.5)
-                }
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text("夜行者_K")
-                        .font(LiquidTheme.Typography.section)
-                        .foregroundStyle(LiquidTheme.Palette.label)
-
-                    Text("会员")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(LiquidTheme.Palette.onAccent)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(LiquidTheme.Palette.accent))
-                }
-
-                Text("BhandsMusic 会员 · 有效期至 2027-03-18")
-                    .font(LiquidTheme.Typography.caption)
-                    .foregroundStyle(LiquidTheme.Palette.secondary)
+        Button {
+            if session.isLoggedIn {
+                detail = .account
+            } else {
+                showsLogin = true
             }
+        } label: {
+            HStack(spacing: LiquidTheme.Spacing.md) {
+                avatar
 
-            Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(session.account?.nickname ?? "未登录")
+                            .font(LiquidTheme.Typography.section)
+                            .foregroundStyle(LiquidTheme.Palette.label)
+                            .lineLimit(1)
 
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(LiquidTheme.Palette.tertiary)
+                        if let account = session.account, account.isVIP {
+                            Text(account.membershipText)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(LiquidTheme.Palette.onAccent)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(LiquidTheme.Palette.accent))
+                        }
+                    }
+
+                    Text(subtitleText)
+                        .font(LiquidTheme.Typography.caption)
+                        .foregroundStyle(LiquidTheme.Palette.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(LiquidTheme.Palette.tertiary)
+            }
+            .padding(LiquidTheme.Spacing.md)
+            .glassPanel()
+            .padding(.horizontal, LiquidTheme.Spacing.screenH)
+            .contentShape(Rectangle())
         }
-        .padding(LiquidTheme.Spacing.md)
-        .glassPanel()
-        .padding(.horizontal, LiquidTheme.Spacing.screenH)
+        .buttonStyle(.plain)
+    }
+
+    private var subtitleText: String {
+        guard let account = session.account else {
+            return session.isLoading ? "正在获取账号信息…" : "点击登录网易云音乐"
+        }
+        return "网易云 UID \(account.id) · \(account.membershipText)"
+    }
+
+    @ViewBuilder
+    private var avatar: some View {
+        Group {
+            if let raw = session.account?.avatarURL, let url = URL(string: raw) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Image("avatar_rider").resizable().scaledToFill()
+                    }
+                }
+            } else {
+                Image("avatar_rider").resizable().scaledToFill()
+            }
+        }
+        .frame(width: 64, height: 64)
+        .clipShape(Circle())
+        .overlay {
+            Circle().strokeBorder(Color.white.opacity(0.16), lineWidth: 0.5)
+        }
     }
 
     // MARK: - 统计

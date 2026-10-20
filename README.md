@@ -293,6 +293,29 @@ enum SongSource {
 **直播流没有时长、不能拖进度**：`duration` 记为 0，`Song.isLive` 据此判断，
 正在播放页换成「● 直播中」标签而不是进度条，锁屏按 `MPNowPlayingInfoPropertyIsLiveStream` 处理。
 
+#### 网易云账号（扫码登录）
+
+「我的」页点头像卡片 → 扫码登录。**不在 App 里碰用户密码**，授权交给网易云自己的 App。
+
+```
+/login/qr/key    → unikey
+/login/qr/create → qrimg（base64 data URL）
+/login/qr/check  → 轮询：801 等待 / 802 已扫待确认 / 803 成功（返回 cookie）
+```
+
+登录后所有请求都带上 `cookie`（NeteaseCloudMusicApi 认 **query 参数**，不是 header）。
+
+**登录与否的差别：**
+
+| | 未登录 | 已登录 |
+|---|---|---|
+| 每日推荐 | `/personalized/newsong` 新歌速递 | `/recommend/songs` 按账号生成 |
+| 账号卡 | 「点击登录网易云音乐」 | 真实昵称、头像、VIP 类型 |
+
+登录/登出后要 `PlaylistStore.reload()` —— 否则「每日推荐」还是上一个账号的。
+
+> ⚠️ cookie 存在 `UserDefaults`。正式产品该放 Keychain，这里是为了演示能跨启动保持登录。
+
 #### 网易云（需要自建服务）
 
 ```bash

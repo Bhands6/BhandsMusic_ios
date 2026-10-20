@@ -52,6 +52,7 @@ struct RootView: View {
         }
         .environment(player)
         .environment(playlists)
+        .environment(NeteaseSession.shared)
         // 内容与 chrome 一起延伸到屏幕底部。
         // iOS 26 的浮动 Tab Bar 就贴在这个位置：下方只留 ~16pt 给 Home Indicator，
         // 而不是留一整条 34pt 的安全区 —— 那样 Tab Bar 会像悬在内容中间。
@@ -71,6 +72,8 @@ struct RootView: View {
             }
             // 歌单的真实曲库（网易云）。失败会静默退回本地选曲。
             await playlists.loadAll()
+            // 有本地 cookie 的话顺手刷一次账号信息（cookie 失效会自动清掉）
+            await NeteaseSession.shared.refreshAccount()
         }
     }
 

@@ -63,6 +63,7 @@ struct ProfileDetailSheet: View {
     let detail: ProfileDetail
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(NeteaseSession.self) private var session
     @State private var quality = AudioQuality.current
 
     var body: some View {
@@ -252,18 +253,20 @@ struct ProfileDetailSheet: View {
     private var accountContent: some View {
         VStack(alignment: .leading, spacing: LiquidTheme.Spacing.sm) {
             VStack(spacing: 0) {
-                infoRow("用户名", "夜行者_K")
+                infoRow("用户名", session.account?.nickname ?? "未登录")
                 divider
-                infoRow("会员", "BhandsMusic 会员")
+                infoRow("会员", session.account?.membershipText ?? "—")
                 divider
-                infoRow("有效期至", "2027-03-18")
+                infoRow("网易云 UID", session.account.map { String($0.id) } ?? "—")
                 divider
-                infoRow("登录方式", "Apple ID")
+                infoRow("登录方式", session.isLoggedIn ? "扫码登录" : "—")
             }
             .glassPanel()
             .padding(.horizontal, LiquidTheme.Spacing.screenH)
 
-            Text("演示版本没有接入真实账号体系，以上信息为示例数据。")
+            Text(session.isLoggedIn
+                 ? "登录态保存在本机，「每日推荐」会按这个账号生成。"
+                 : "在「我的」页点头像卡片即可扫码登录。")
                 .font(LiquidTheme.Typography.caption)
                 .foregroundStyle(LiquidTheme.Palette.tertiary)
                 .padding(.horizontal, LiquidTheme.Spacing.screenH)

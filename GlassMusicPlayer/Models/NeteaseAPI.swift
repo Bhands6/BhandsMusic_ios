@@ -175,6 +175,90 @@ enum NeteaseAPI {
         return lines.sorted { $0.time < $1.time }
     }
 
+    // MARK: - 登录（扫码）
+
+    struct QRLogin {
+        let key: String
+        /// `data:image/png;base64,...`，直接喂给 `UIImage(data:)` 之前要先剥前缀
+        let imageDataURL: String
+    }
+
+    enum QRState {
+        /// 二维码过期，需要重新申请
+        case expired
+        /// 还没扫
+        case waiting
+        /// 扫了，等手机上点确认
+        case scanned
+        /// 确认了，cookie 到手
+        case authorized(cookie: String)
+    }
+
+    static func qrLoginKey() async throws -> QRLogin {
+        let keyJSON = try await get("/login/qr/key", ["timestamp": String(Int(Date().timeIntervalSince1970 * 1000))])
+        guard let key = (keyJSON["data"] as? [String: Any])?["unikey"] as? String else {
+            throw Failure.badResponse
+        }
+
+        let createJSON = try await get("/login/qr/create", ["key": key, "qrimg": "true"])
+        guard let data = createJSON["data"] as? [String: Any],
+              let image = data["qrimg"] as? String, !image.isEmpty
+        else { throw Failure.badResponse }
+
+        return QRLogin(key: key, imageDataURL: image)
+    }
+
+    /// 轮询扫码状态。801 等待 / 802 已扫待确认 / 803 成功 / 800 过期。
+    static func qrCheck(key: String) async throws -> QRState {
+        let json = try await get("/login/qr/check", [
+            "key": key,
+            "timestamp": String(Int(Date().timeIntervalSince1970 * 1000))
+        ])
+
+        switch json["code"] as? Int {
+        case 800: return .expired
+        case 802: return .scanned
+        case 803:
+            guard let cookie = json["cookie"] as? String, !cookie.isEmpty else {
+                throw Failure.badResponse
+            }
+            return .authorized(cookie: cookie)
+        default: return .waiting
+        }
+    }
+
+    // MARK: - 账号级接口
+
+    /// 每日推荐。**需要登录** —— 未登录时接口返回空，调用方要退回新歌速递。
+    static func recommendSongs() async throws -> [Track] {
+        let json = try await get("/recommend/songs", [:])
+        guard let data = json["data"] as? [String: Any],
+              let songs = data["dailySongs"] as? [[String: Any]]
+        else { throw Failure.badResponse }
+
+        return songs.compactMap(track(from:))
+    }
+
+    /// 把搜索/推荐接口里的单条曲目映射成 `Track`。
+    private static func track(from item: [String: Any]) -> Track? {
+        guard let id = item["id"] as? Int, let name = item["name"] as? String else { return nil }
+
+        let artists = (item["artists"] as? [[String: Any]])?
+            .compactMap { $0["name"] as? String }
+            .joined(separator: " / ") ?? "未知艺人"
+
+        let album = item["album"] as? [String: Any]
+        let ms = item["duration"] as? Double ?? Double(item["dt"] as? Int ?? 0)
+
+        return Track(
+            id: id,
+            title: name,
+            artist: artists,
+            album: album?["name"] as? String ?? "",
+            duration: ms / 1000
+        )
+    }
+
     /// 取播放地址。
     ///
     /// 返回的常常是 `http://m7xx.music.126.net/...`，这里统一换成 https ——
@@ -195,9 +279,20 @@ enum NeteaseAPI {
 
     // MARK: - 请求
 
+    /// 给「我的」页这类需要自己拼请求的地方用。
+    static func rawGet(_ path: String, _ query: [String: String]) async throws -> [String: Any] {
+        try await get(path, query)
+    }
+
     private static func get(_ path: String, _ query: [String: String]) async throws -> [String: Any] {
+        var merged = query
+        // 登录后所有请求都带上 cookie（NeteaseCloudMusicApi 认 query 参数）
+        if let cookie = NeteaseSession.shared.cookie {
+            merged["cookie"] = cookie
+        }
+
         var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
-        components?.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        components?.queryItems = merged.map { URLQueryItem(name: $0.key, value: $0.value) }
         guard let url = components?.url else { throw Failure.badResponse }
 
         var request = URLRequest(url: url)

@@ -48,10 +48,28 @@ final class PlaylistStore {
         lastError = loaded.isEmpty ? "网易云接口不可用，已退回本地曲库" : nil
     }
 
+    /// 重新拉一遍。登录/登出后要调 —— 「每日推荐」会跟着账号变。
+    func reload() async {
+        attempted = false
+        tracks = [:]
+        await loadAll()
+    }
+
     private static func fetch(for playlist: Playlist) async -> [Song]? {
         do {
-            // 「每日推荐」搜关键词是搜不出"推荐"的，走新歌速递
+            // 「每日推荐」搜关键词是搜不出"推荐"的，走专门接口。
+            // 登录了就用账号级的 /recommend/songs，没登录退回新歌速递。
             if playlist.title == "每日推荐" {
+                if NeteaseSession.shared.isLoggedIn,
+                   var daily = try? await NeteaseAPI.recommendSongs(),
+                   !daily.isEmpty {
+                    if let covers = try? await NeteaseAPI.covers(ids: daily.map(\.id)) {
+                        for index in daily.indices {
+                            daily[index].cover = covers[daily[index].id]
+                        }
+                    }
+                    return daily.map(\.song)
+                }
                 return try await NeteaseAPI.newsong(limit: 30).map(\.song)
             }
 
