@@ -367,6 +367,16 @@ cd api-enhanced && npm install && node app.js     # 默认 3000 端口
 `LyricsPane` 的高亮只改**字体和透明度**（`onDark` 全亮 + 加粗 vs 42% 透明），
 不加背景块。滚动用 `ScrollViewReader` + `scrollTo(anchor: .center)` 跟随当前行。
 
+### 点歌行为
+
+在歌单里点任意一行：**开始播放 + 自动打开「正在播放」全屏页**。
+
+播放页用 `PlaylistDetailView` **自己的** `fullScreenCover`，不是复用根视图那个 ——
+歌单是 sheet，根视图的 cover 在 sheet 之上弹不出来。
+这样关闭播放页会回到歌单，而不是一路退回首页。
+
+点「播放 / 随机播放」按钮只开始播放，不跳页 —— 那两个是"整单开始"的动作。
+
 ### 纵向节奏
 
 | 层级 | 值 |

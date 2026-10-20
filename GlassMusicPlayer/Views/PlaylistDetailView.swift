@@ -10,6 +10,11 @@ struct PlaylistDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var scrollOffset: CGFloat = 0
+    /// 点歌后自动打开「正在播放」。
+    /// 用本视图自己的 cover 而不是复用根视图那个 —— 歌单是 sheet，
+    /// 根视图的 fullScreenCover 在 sheet 之上是弹不出来的。
+    /// 好处是关闭播放页会回到歌单，而不是一路退回首页。
+    @State private var showsNowPlaying = false
 
     /// 曲目统一从 `PlaylistStore` 取：远程拉到了就用网易云的 30 首，否则退回本地选曲。
     ///
@@ -55,6 +60,24 @@ struct PlaylistDetailView: View {
             }
             .padding(.horizontal, LiquidTheme.Spacing.md)
             .padding(.top, 4)
+        }
+        .fullScreenCover(isPresented: $showsNowPlaying) {
+            NowPlayingView()
+                .environment(player)
+                .presentationBackground(.clear)
+        }
+        .onAppear {
+            // 截图/自动化用：模拟器点不了列表，-autoplay 时自动点第一行，
+            // 验证「点歌 → 播放 + 打开播放页」这条链。
+            // 等 4 秒是刻意的 —— 真实用户点歌时远程曲库早就加载完了，
+            // 立刻触发会点到本地兜底列表，验证的就不是真实时序。
+            guard DebugLaunch.autoplays else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(4))
+                guard !songs.isEmpty else { return }
+                player.play(at: 0, in: songs)
+                showsNowPlaying = true
+            }
         }
     }
 
@@ -157,6 +180,7 @@ struct PlaylistDetailView: View {
                 ) {
                     // 按行号播，不做内容匹配 —— 点第几行就是第几行
                     player.play(at: index, in: songs)
+                    showsNowPlaying = true
                 }
             }
         }
