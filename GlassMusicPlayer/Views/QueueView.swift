@@ -164,6 +164,9 @@ struct QueueView: View {
 
         return Button {
             player.play(at: index, in: player.queue)
+            // 点队列里的歌 = "我要听这首"，顺手收起队列回到播放页。
+            // 留着队列开着的话，用户还得再点一次关闭才能看到播放界面。
+            dismiss()
         } label: {
             HStack(spacing: LiquidTheme.Spacing.sm) {
                 ArtworkView(name: song.artworkName, cornerRadius: 10)
