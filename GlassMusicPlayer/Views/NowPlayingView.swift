@@ -85,7 +85,29 @@ struct NowPlayingView: View {
 
             Spacer()
 
-            GlassIconButton(systemName: "ellipsis", tint: LiquidTheme.Palette.onDark) {}
+            // 之前是个空闭包，点了没反应。换成真的有内容的菜单。
+            Menu {
+                Button {
+                    player.toggleLike(song)
+                } label: {
+                    Label(
+                        player.isLiked(song) ? "取消喜欢" : "喜欢",
+                        systemImage: player.isLiked(song) ? "heart.slash" : "heart"
+                    )
+                }
+
+                ShareLink(item: "\(song.title) — \(song.artist)") {
+                    Label("分享", systemImage: "square.and.arrow.up")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(LiquidTheme.Palette.onDark)
+                    .frame(width: LiquidTheme.Hit.control, height: LiquidTheme.Hit.control)
+                    .liquidGlass(cornerRadius: LiquidTheme.Hit.control / 2, interactive: true)
+                    .contentShape(Circle())
+            }
+            .accessibilityLabel(Text("更多"))
         }
         .padding(.top, LiquidTheme.Spacing.xs)
     }
@@ -305,7 +327,8 @@ struct NowPlayingView: View {
 
             Spacer()
 
-            GlassIconButton(systemName: "airplayaudio", tint: LiquidTheme.Palette.onDarkSoft) {}
+            // 系统 AirPlay 路由选择器（之前是空闭包，点了没反应）
+            AirPlayButton()
         }
     }
 }

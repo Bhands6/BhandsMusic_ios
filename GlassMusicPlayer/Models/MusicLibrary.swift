@@ -485,6 +485,18 @@ final class PlayerModel {
         }
     }
 
+    /// 清空队列，只留下正在播的这一首。
+    ///
+    /// 语义和 Apple Music 的 Clear 一致：**不是把当前歌也停掉**，
+    /// 而是把"接下来要播的"清干净。真要停止播放是暂停按钮的事。
+    func clearUpNext() {
+        guard !queue.isEmpty else { return }
+        let playing = current
+        queue = [playing]
+        currentIndex = 0
+        history.removeAll()
+    }
+
     /// 按下标播放。**列表点击一律走这个** —— 不做任何"按内容匹配"，
     /// 点第几行就播第几行，不可能错位。
     func play(at index: Int, in list: [Song]) {

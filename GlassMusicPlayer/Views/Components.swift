@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 
 // MARK: - 封面
@@ -531,6 +532,37 @@ struct ToastPill: View {
             .accessibilityElement()
             .accessibilityLabel(message)
     }
+}
+
+// MARK: - AirPlay 路由选择
+
+/// 系统的 AirPlay 路由选择器。
+/// SwiftUI 没有原生控件，只能包一层 `AVRoutePickerView`。
+/// 它自带图标和点击行为，外面套一层玻璃圆底和页面其他按钮对齐。
+struct AirPlayButton: View {
+    var size: CGFloat = LiquidTheme.Hit.control
+
+    var body: some View {
+        AVRoutePickerViewRepresentable()
+            .frame(width: 22, height: 22)
+            .frame(width: size, height: size)
+            .liquidGlass(cornerRadius: size / 2, interactive: true)
+            .contentShape(Circle())
+            .accessibilityLabel(Text("AirPlay"))
+    }
+}
+
+private struct AVRoutePickerViewRepresentable: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.tintColor = .white
+        view.activeTintColor = .white
+        // 音频 App 不该优先列视频设备
+        view.prioritizesVideoDevices = false
+        return view
+    }
+
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
 
 // MARK: - 悬浮 Tab Bar

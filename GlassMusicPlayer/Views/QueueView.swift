@@ -78,7 +78,14 @@ struct QueueView: View {
 
             Spacer()
 
-            GlassIconButton(systemName: "trash", tint: LiquidTheme.Palette.onDarkSoft) {}
+            // 之前是空闭包，点了没反应。现在真的清空队列（保留当前这首）。
+            GlassIconButton(systemName: "trash", tint: LiquidTheme.Palette.onDarkSoft) {
+                withAnimation(LiquidTheme.Motion.gentle) {
+                    player.clearUpNext()
+                }
+            }
+            .disabled(player.queue.count <= 1)
+            .opacity(player.queue.count <= 1 ? 0.35 : 1)
         }
         .padding(.horizontal, LiquidTheme.Spacing.md)
         .padding(.top, LiquidTheme.Spacing.xs)
