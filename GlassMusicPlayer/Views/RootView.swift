@@ -108,7 +108,11 @@ struct RootView: View {
                     }
                 },
                 onPlayPause: { player.togglePlayPause() },
-                onNext: { player.next() }
+                onNext: {
+                    if !player.next() {
+                        showToast("已经是最后一首了")
+                    }
+                }
             )
 
             LiquidTabBar(items: tabs, selection: $selection)

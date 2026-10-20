@@ -464,12 +464,15 @@ final class PlayerModel {
 
     var remaining: Double { (1 - progress) * current.duration }
 
-    /// 队列里当前曲目之后的 5 首
+    /// 当前曲目之后的所有曲目。
+    ///
+    /// 之前是 `(1...min(5, count-1)).map { queue[(currentIndex+offset) % count] }` ——
+    /// 两个问题：**只给 5 首**（30 首的歌单永远看不到剩下的），
+    /// 而且 `% count` 会**绕回开头**（播到倒数第二首，"接下来"却出现第 1、2 首）。
+    /// 队列就该是"后面还有什么"，播完就没有了。
     var upNext: [Song] {
-        guard queue.count > 1 else { return [] }
-        return (1...min(5, queue.count - 1)).map { offset in
-            queue[(currentIndex + offset) % queue.count]
-        }
+        guard currentIndex < queue.count - 1 else { return [] }
+        return Array(queue[(currentIndex + 1)...])
     }
 
     func isLiked(_ song: Song) -> Bool { likedIDs.contains(song.id) }
@@ -509,8 +512,10 @@ final class PlayerModel {
         loadCurrent(autoplay: true)
     }
 
-    func next() {
-        guard !queue.isEmpty else { return }
+    /// - Returns: 是否真的切歌了。`false` 表示已经是最后一首 —— 和 `previous()` 对称。
+    @discardableResult
+    func next() -> Bool {
+        guard !queue.isEmpty else { return false }
 
         if isShuffleOn {
             history.append(currentIndex)
@@ -519,9 +524,12 @@ final class PlayerModel {
             currentIndex = randomIndex(excluding: currentIndex)
         } else {
             history.removeAll()
-            currentIndex = (currentIndex + 1) % queue.count
+            // 不再 `% count` 绕回第一首 —— 队列末尾就是末尾
+            guard currentIndex < queue.count - 1 else { return false }
+            currentIndex += 1
         }
         loadCurrent(autoplay: true)
+        return true
     }
 
     /// 随机但不重复当前这首。队列只有一首时原地不动。

@@ -287,7 +287,17 @@ struct SearchView: View {
         remoteError = nil
 
         do {
-            let tracks = try await NeteaseAPI.search(keyword)
+            var tracks = try await NeteaseAPI.search(keyword)
+            guard !Task.isCancelled else { return }
+
+            // `/search` 不给封面地址，补一次批量 `/song/detail`，
+            // 否则搜索结果全是渐变兜底，和歌单里的真封面对不上
+            if let covers = try? await NeteaseAPI.covers(ids: tracks.map(\.id)) {
+                for index in tracks.indices {
+                    tracks[index].cover = covers[tracks[index].id]
+                }
+            }
+
             guard !Task.isCancelled else { return }
             remoteSongs = tracks.map(\.song)
         } catch {
