@@ -1,5 +1,7 @@
 # BhandsMusic · 液态玻璃音乐播放器（SwiftUI）
 
+> 仓库：https://github.com/Bhands6/BhandsMusic_ios
+
 一套可运行的 iOS 音乐播放器高保真 UI，视觉语言为 **iOS 26 Liquid Glass**。
 七个界面全部编译通过并在 iPhone 18 Pro 模拟器上逐屏截图验证。
 
