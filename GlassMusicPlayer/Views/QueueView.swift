@@ -27,6 +27,15 @@ struct QueueView: View {
                         queueList
                             .padding(.bottom, 40)
                     }
+                    // 圆角和底色必须加在 **ScrollView 的可视区** 上，不能加在内容上。
+                    // 加在内容上时，圆角在整条列表的头尾 —— 滚到中间看到的是卡片中段，
+                    // 顶边就是直的。这里让卡片是固定形状，行在里面滚。
+                    .background(
+                        LiquidTheme.Palette.card,
+                        in: RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous))
+                    .padding(.horizontal, LiquidTheme.Spacing.screenH)
                     // 能滚，但不显示滚动条 —— 全屏沉浸式，右侧一条灰线破坏氛围。
                     // 位置感交给标题旁的「1 / 20」。
                     .scrollIndicators(.hidden)
@@ -138,13 +147,7 @@ struct QueueView: View {
                 queueRow(song, index: index)
             }
         }
-        .background(
-            LiquidTheme.Palette.card,
-            in: RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous)
-        )
-        // 滚动时行不能溢出圆角
-        .clipShape(RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous))
-        .padding(.horizontal, LiquidTheme.Spacing.screenH)
+        // 这里只管行，底色和圆角由外层 ScrollView 负责 —— 见 body 里的说明
     }
 
     private func queueRow(_ song: Song, index: Int) -> some View {
