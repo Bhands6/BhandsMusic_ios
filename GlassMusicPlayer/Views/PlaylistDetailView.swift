@@ -56,7 +56,9 @@ struct PlaylistDetailView: View {
                 showsBack: true,
                 onBack: { dismiss() }
             ) {
-                HeaderIconButton(systemName: "ellipsis") {}
+                // 这里原来有个省略号按钮，是空闭包。页面已经有「播放 / 随机播放」，
+                // 再挂一个"更多"菜单只会重复，直接去掉。
+                EmptyView()
             }
             .padding(.horizontal, LiquidTheme.Spacing.md)
             .padding(.top, 4)

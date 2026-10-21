@@ -38,9 +38,12 @@ final class LibraryStore {
 
     @ObservationIgnored private var attempted = false
 
+    /// 按专辑去重 —— 同一张专辑有多首歌时不该出现多行
     var albums: [Album] {
-        songs.map { song in
-            Album(
+        var seen = Set<String>()
+        return songs.compactMap { song in
+            guard seen.insert("\(song.album)|\(song.artist)").inserted else { return nil }
+            return Album(
                 title: song.album,
                 artist: song.artist,
                 year: song.year,
@@ -50,9 +53,12 @@ final class LibraryStore {
         }
     }
 
+    /// 按艺人去重 —— 同一位歌手有两首歌时不该出现两行
     var artists: [Artist] {
-        songs.map { song in
-            Artist(
+        var seen = Set<String>()
+        return songs.compactMap { song in
+            guard seen.insert(song.artist).inserted else { return nil }
+            return Artist(
                 name: song.artist,
                 genre: "精选",
                 artworkName: song.artworkName,
@@ -60,6 +66,15 @@ final class LibraryStore {
             )
         }
     }
+
+    /// 最近播放。真实产品该读本地历史，这里先取曲库前 6 首。
+    var recentlyPlayed: [Song] { Array(songs.prefix(6)) }
+
+    /// 新发行
+    var newReleases: [Album] { Array(albums.sorted { $0.year > $1.year }.prefix(6)) }
+
+    /// 热门单曲。远程曲目没有播放量，顺序就是曲库顺序。
+    var topSongs: [Song] { songs }
 
     func load() async {
         guard !attempted else { return }

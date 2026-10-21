@@ -31,7 +31,7 @@ struct RootView: View {
         ZStack(alignment: .bottom) {
             Group {
                 switch selection {
-                case 0:  HomeView()
+                case 0:  HomeView(selection: $selection)
                 case 1:  LibraryView()
                 case 2:  SearchView(isModal: false)
                 default: ProfileView()

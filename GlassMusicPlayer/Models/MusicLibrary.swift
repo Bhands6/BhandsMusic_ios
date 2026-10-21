@@ -37,6 +37,17 @@ struct Song: Identifiable, Hashable {
     /// 默认是打包音轨，电台等远程源显式传入
     var source: SongSource = .bundled
 
+    /// 跨启动稳定的标识，用来存"喜欢"这类持久状态。
+    ///
+    /// **不能用 `id`** —— 它是每次启动重新生成的 UUID，重启后对不上。
+    var stableKey: String {
+        switch source {
+        case .netease(let id): return "ncm:\(id)"
+        case .bundled: return "local:\(title)|\(artist)"
+        case .stream(let url): return "stream:\(url.absoluteString)"
+        }
+    }
+
     /// 直播流：没有时长、不能拖进度
     var isLive: Bool { duration <= 0 }
 
@@ -261,16 +272,6 @@ enum MusicLibrary {
 
     // MARK: 专辑
 
-    static let albums: [Album] = songs.map { song in
-        Album(
-            title: song.album,
-            artist: song.artist,
-            year: song.year,
-            artworkName: song.artworkName,
-            songIDs: [song.id]
-        )
-    }
-
     // MARK: 歌单
 
     /// 确定性洗牌：同一天内结果固定，隔天换一批。
@@ -346,42 +347,13 @@ enum MusicLibrary {
         )
     ]
 
-    // MARK: 艺人
-
-    static let artists: [Artist] = songs.map { song in
-        Artist(
-            name: song.artist,
-            genre: genre(for: song),
-            artworkName: song.artworkName,
-            monthlyListeners: max(120_000, song.plays / 6)
-        )
-    }
-
-    private static func genre(for song: Song) -> String {
-        switch song.title {
-        case "Neon Tokyo", "Cyber Bloom":  return "合成器浪潮"
-        case "午夜霓虹", "Chrome Heart":     return "电子"
-        case "Deep Space Love":            return "氛围电子"
-        case "Velvet Circuit", "Tokyo Rain": return "Lo-Fi"
-        default:                           return "国风电音"
-        }
-    }
-
     // MARK: 首页分组
-
-    /// 最近播放（按「上次听到的位置」排，真实产品里来自本地历史）
-    static let recentlyPlayed: [Song] = [
-        songs[2], songs[0], songs[5], songs[3], songs[7], songs[1]
-    ]
 
     /// 为你推荐 —— 首页用三列网格，正好 6 个铺满两行
     static let madeForYou: [Playlist] = playlists
 
-    /// 新发行
-    static let newReleases: [Album] = Array(albums.sorted { $0.year > $1.year }.prefix(6))
-
-    /// 热门单曲
-    static let topSongs: [Song] = songs.sorted { $0.plays > $1.plays }
+    // 最近播放 / 新发行 / 热门单曲原本也在这里，但它们绑在打包音轨上。
+    // 音乐库换成远程曲目后，这三栏还是显示那 8 首测试歌 —— 已移到 LibraryStore。
 }
 
 // MARK: - 播放状态
@@ -420,7 +392,13 @@ final class PlayerModel {
     var showsLyrics: Bool = DebugLaunch.opensLyrics
     /// 用户正在拖进度条 —— 期间不让播放器的进度回调覆盖手指位置
     var isSeeking: Bool = false
-    private(set) var likedIDs: Set<UUID> = []
+    /// 收藏的歌曲。键是 `Song.stableKey`，不是 UUID —— UUID 每次启动都变。
+    private(set) var likedIDs: Set<String> =
+        Set(UserDefaults.standard.stringArray(forKey: "likedKeys") ?? [])
+
+    private func persistLikes() {
+        UserDefaults.standard.set(Array(likedIDs), forKey: "likedKeys")
+    }
 
     /// 随机播放走过的曲目下标，「上一曲」按这个回退
     @ObservationIgnored private var history: [Int] = []
@@ -479,14 +457,15 @@ final class PlayerModel {
         return Array(queue[(currentIndex + 1)...])
     }
 
-    func isLiked(_ song: Song) -> Bool { likedIDs.contains(song.id) }
+    func isLiked(_ song: Song) -> Bool { likedIDs.contains(song.stableKey) }
 
     func toggleLike(_ song: Song) {
-        if likedIDs.contains(song.id) {
-            likedIDs.remove(song.id)
+        if likedIDs.contains(song.stableKey) {
+            likedIDs.remove(song.stableKey)
         } else {
-            likedIDs.insert(song.id)
+            likedIDs.insert(song.stableKey)
         }
+        persistLikes()
     }
 
     /// 音乐库解析完就换掉空闲队列。

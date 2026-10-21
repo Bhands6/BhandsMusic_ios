@@ -24,7 +24,9 @@ struct SearchView: View {
     @State private var isSearchingRemote = false
     @State private var remoteError: String?
 
-    private let recentSearches = ["午夜霓虹", "AURORA DRIFT", "合成器浪潮", "雨天", "NOVA"]
+    /// 最近搜索。持久化在 UserDefaults —— 之前是写死的假数据，「清除」也是空闭包。
+    @State private var recentSearches: [String] =
+        UserDefaults.standard.stringArray(forKey: "recentSearches") ?? []
 
     private var results: [Song] {
         let keyword = query.trimmingCharacters(in: .whitespaces)
@@ -45,7 +47,10 @@ struct SearchView: View {
                     Color.clear.frame(height: 0)
 
                     if query.isEmpty {
-                        recentSection
+                        // 没有历史时整段不显示，免得留一个空的「最近搜索」标题
+                        if !recentSearches.isEmpty {
+                            recentSection
+                        }
                         genreSection
                     } else {
                         if !results.isEmpty {
@@ -87,6 +92,7 @@ struct SearchView: View {
                     .foregroundStyle(LiquidTheme.Palette.secondary)
 
                 TextField("歌曲、艺人、专辑", text: $query)
+                    .onSubmit { remember(query) }
                     .font(LiquidTheme.Typography.rowTitle)
                     .foregroundStyle(LiquidTheme.Palette.label)
                     .focused($isFocused)
@@ -127,9 +133,23 @@ struct SearchView: View {
 
     // MARK: - 最近搜索
 
+    /// 记一条搜索历史。太短的不记 —— 打字过程中会进来很多半截词。
+    private func remember(_ keyword: String) {
+        let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else { return }
+
+        var list = recentSearches.filter { $0 != trimmed }
+        list.insert(trimmed, at: 0)
+        recentSearches = Array(list.prefix(8))
+        UserDefaults.standard.set(recentSearches, forKey: "recentSearches")
+    }
+
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: LiquidTheme.Spacing.sm) {
-            SectionHeader(title: "最近搜索", actionTitle: "清除") {}
+            SectionHeader(title: "最近搜索", actionTitle: "清除") {
+                recentSearches = []
+                UserDefaults.standard.removeObject(forKey: "recentSearches")
+            }
                 .padding(.horizontal, LiquidTheme.Spacing.screenH)
 
             FlowLayout(spacing: LiquidTheme.Spacing.xs) {

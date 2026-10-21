@@ -5,6 +5,9 @@ import SwiftUI
 /// 页面结构：稳固的柔和底 → 可滚动的内容（大标题 / 横向货架 / 实底列表）
 /// → 悬浮玻璃头部覆盖其上。滚动时大标题滚走、头部标题淡入。
 struct HomeView: View {
+    /// 点右上角头像要切到「我的」，所以得拿到 tab 选择
+    @Binding var selection: Int
+
     @Environment(PlayerModel.self) private var player
     @Environment(LibraryStore.self) private var library
     @Environment(PlaylistStore.self) private var playlists
@@ -47,7 +50,10 @@ struct HomeView: View {
                     HeaderIconButton(systemName: "magnifyingglass") {
                         showsSearch = true
                     }
-                    HeaderIconButton(systemName: "person.crop.circle") {}
+                    HeaderIconButton(systemName: "person.crop.circle") {
+                    // 之前是空闭包。头像点进「我的」是最符合直觉的
+                    selection = 3
+                }
                 }
             }
             .padding(.horizontal, LiquidTheme.Spacing.md)
@@ -167,7 +173,7 @@ struct HomeView: View {
 
             ScrollView(.horizontal) {
                 HStack(spacing: LiquidTheme.Spacing.sm) {
-                    ForEach(MusicLibrary.recentlyPlayed) { song in
+                    ForEach(library.recentlyPlayed) { song in
                         Button {
                             player.play(song)
                         } label: {
@@ -204,7 +210,8 @@ struct HomeView: View {
 
     private var madeForYouSection: some View {
         VStack(alignment: .leading, spacing: LiquidTheme.Spacing.sm) {
-            SectionHeader(title: "为你推荐", subtitle: "根据最近的收听生成", actionTitle: "全部") {}
+            // 6 个歌单本来就全部横向铺开了，「全部」没有下一页可去，去掉这个死按钮
+            SectionHeader(title: "为你推荐", subtitle: "根据最近的收听生成")
                 .padding(.horizontal, LiquidTheme.Spacing.screenH)
 
             LazyVGrid(
@@ -337,7 +344,7 @@ struct HomeView: View {
 
             ScrollView(.horizontal) {
                 HStack(spacing: LiquidTheme.Spacing.sm) {
-                    ForEach(MusicLibrary.newReleases) { album in
+                    ForEach(library.newReleases) { album in
                         VStack(alignment: .leading, spacing: LiquidTheme.Spacing.xs) {
                             ArtworkView(name: album.artworkName, cornerRadius: LiquidTheme.Radius.tile)
                                 .frame(width: 128, height: 128)
@@ -370,7 +377,7 @@ struct HomeView: View {
                 .padding(.horizontal, LiquidTheme.Spacing.screenH)
 
             VStack(spacing: 0) {
-                ForEach(Array(MusicLibrary.topSongs.prefix(5).enumerated()), id: \.element.id) { index, song in
+                ForEach(Array(library.topSongs.prefix(5).enumerated()), id: \.element.id) { index, song in
                     if index > 0 {
                         hairline
                     }
@@ -382,7 +389,7 @@ struct HomeView: View {
                         isPlaying: player.isPlaying,
                         isLiked: player.isLiked(song)
                     ) {
-                        player.play(song, in: MusicLibrary.topSongs)
+                        player.play(song, in: library.topSongs)
                     }
                 }
             }
@@ -400,6 +407,6 @@ struct HomeView: View {
 }
 
 #Preview {
-    HomeView()
+    HomeView(selection: .constant(0))
         .environment(PlayerModel())
 }

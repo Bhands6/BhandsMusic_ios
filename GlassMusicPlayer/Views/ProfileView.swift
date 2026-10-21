@@ -196,11 +196,12 @@ struct ProfileView: View {
 
     private var statsCard: some View {
         HStack(spacing: 0) {
-            stat(value: "\(player.likedIDs.count + 126)", label: "收藏歌曲")
+            // 三个数字都得是真的：之前「+126」和「36h」都是编的
+            stat(value: "\(player.likedIDs.count)", label: "收藏歌曲")
             divider
-            stat(value: "\(MusicLibrary.playlists.count)", label: "我的歌单")
+            stat(value: "\(session.myPlaylists.isEmpty ? MusicLibrary.playlists.count : session.myPlaylists.count)", label: "我的歌单")
             divider
-            stat(value: "36h", label: "本月收听")
+            stat(value: "\(library.songs.count)", label: "曲库歌曲")
         }
         .padding(.vertical, LiquidTheme.Spacing.md)
         .glassPanel()
