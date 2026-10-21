@@ -97,24 +97,27 @@ final class ImageCache {
 /// **为什么不用 `AsyncImage`**：它不做缓存，而且每次视图重建都从 `.empty` 阶段开始。
 /// 列表滚动时单元格被回收重建，图片就会闪一下（占位 → 图片 → 占位…）。
 ///
-/// 这里在 `init` 里**同步**读内存缓存 —— 重建时第一帧就有图，不闪。
+/// ⚠️ 这里不能用「`init` 里读缓存塞进 `@State`」的写法：
+/// `@State` 在**同一个视图位置**上不会因为参数变化而重建 ——
+/// 迷你播放器换歌时还留着上一首的封面。所以要记下图片对应的 URL，
+/// 渲染时再同步查一次缓存。
 struct RemoteImage: View {
     let url: URL?
     var placeholderSeed: String = ""
 
     @State private var image: UIImage?
+    @State private var loadedURL: URL?
 
-    init(url: URL?, placeholderSeed: String = "") {
-        self.url = url
-        self.placeholderSeed = placeholderSeed
-        // 关键：初始化时就同步取缓存，不等 body 之后
-        _image = State(initialValue: url.flatMap { ImageCache.shared.image(for: $0) })
+    /// 当前该显示的图。URL 变了就重新查缓存（同步），不会显示上一首的封面。
+    private var displayed: UIImage? {
+        if loadedURL == url, let image { return image }
+        return url.flatMap { ImageCache.shared.image(for: $0) }
     }
 
     var body: some View {
         Group {
-            if let image {
-                Image(uiImage: image)
+            if let displayed {
+                Image(uiImage: displayed)
                     .resizable()
                     .scaledToFill()
             } else {
@@ -122,10 +125,11 @@ struct RemoteImage: View {
             }
         }
         .task(id: url) {
-            guard image == nil, let url else { return }
+            guard let url else { return }
 
             if let cached = ImageCache.shared.image(for: url) {
                 image = cached
+                loadedURL = url
                 return
             }
             guard let (data, _) = try? await URLSession.shared.data(from: url),
@@ -134,6 +138,7 @@ struct RemoteImage: View {
 
             ImageCache.shared.store(loaded, for: url)
             image = loaded
+            loadedURL = url
         }
     }
 }

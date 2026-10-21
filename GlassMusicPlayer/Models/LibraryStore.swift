@@ -64,6 +64,15 @@ final class LibraryStore {
     func load() async {
         guard !attempted else { return }
         attempted = true
+
+        // 有缓存且清单没变就直接用 —— 清单是固定的，没必要每次启动都重新搜一遍。
+        // 网易对高频请求会返回「操作频繁」，12 次搜索每次都打很容易触发。
+        if let cached = Self.loadCache() {
+            songs = cached
+            isRemote = true
+            return
+        }
+
         isLoading = true
         defer { isLoading = false }
 
@@ -108,15 +117,78 @@ final class LibraryStore {
         songs = ordered
         isRemote = true
         lastError = nil
+        Self.saveCache(ordered)
+    }
+
+    // MARK: - 缓存
+
+    /// 缓存条目。只存重建 `Song` 需要的字段，不存整个 `Song`（它不 Codable）。
+    private struct CacheEntry: Codable {
+        let id: Int
+        let title: String
+        let artist: String
+        let album: String
+        let duration: Double
+        let cover: String?
+    }
+
+    private static var cacheKey: String { "libraryCache" }
+
+    /// 清单指纹。改了清单就得重新解析，否则还是旧的 12 首。
+    private static var signature: String {
+        catalog.map(\.title).joined(separator: "|")
+    }
+
+    private static func loadCache() -> [Song]? {
+        guard let data = UserDefaults.standard.data(forKey: cacheKey + ".data"),
+              UserDefaults.standard.string(forKey: cacheKey + ".sig") == signature,
+              let entries = try? JSONDecoder().decode([CacheEntry].self, from: data),
+              entries.count >= catalog.count / 2
+        else { return nil }
+
+        return entries.map { entry in
+            Song(
+                title: entry.title,
+                artist: entry.artist,
+                album: entry.album,
+                duration: entry.duration,
+                year: Calendar.current.component(.year, from: Date()),
+                plays: 0,
+                artworkName: entry.cover ?? "netease_\(entry.id)",
+                lyrics: [],
+                source: .netease(id: entry.id)
+            )
+        }
+    }
+
+    private static func saveCache(_ songs: [Song]) {
+        let entries: [CacheEntry] = songs.compactMap { song in
+            guard case .netease(let id) = song.source else { return nil }
+            return CacheEntry(
+                id: id,
+                title: song.title,
+                artist: song.artist,
+                album: song.album,
+                duration: song.duration,
+                cover: song.artworkName.hasPrefix("http") ? song.artworkName : nil
+            )
+        }
+        guard !entries.isEmpty, let data = try? JSONEncoder().encode(entries) else { return }
+        UserDefaults.standard.set(data, forKey: cacheKey + ".data")
+        UserDefaults.standard.set(signature, forKey: cacheKey + ".sig")
     }
 
     /// 按「歌名 + 艺人」搜一首，要求标题对得上 —— 否则可能拿到翻唱或同名的别的歌。
-    /// 失败重试一次：上游偶发 502，重试一次基本能成。
+    ///
+    /// 最多试 3 次，间隔 2s / 5s。网易对高频请求会返回「操作频繁」，
+    /// 立刻重试只会继续撞墙，必须给它退避的时间。
     private static func resolve(_ item: (title: String, artist: String)) async -> Song? {
         let keyword = item.artist.isEmpty ? item.title : "\(item.title) \(item.artist)"
         let normalized = item.title.replacingOccurrences(of: " ", with: "")
+        let delays: [Double] = [0, 2, 5]
 
-        for _ in 0..<2 {
+        for delay in delays {
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
             guard let tracks = try? await NeteaseAPI.search(keyword, limit: 5), !tracks.isEmpty else {
                 continue
             }

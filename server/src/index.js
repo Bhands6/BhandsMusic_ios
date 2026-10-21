@@ -91,12 +91,20 @@ async function cached(name, query, ttl, options) {
 }
 
 function upstreamError(reply, error) {
-  request_log(error);
-  reply.code(502).send({ error: 'upstream_failed', message: error.message });
-}
+  // 网易的限流（code 405「操作频繁」）要如实暴露成 429，
+  // 客户端才知道该退避重试，而不是当成普通故障
+  const upstreamCode = error?.body?.code ?? error?.status;
+  if (upstreamCode === 405) {
+    app.log.warn({ err: error }, '上游限流');
+    reply
+      .header('retry-after', '30')
+      .code(429)
+      .send({ error: 'upstream_rate_limited', message: '网易云限流，请稍后重试' });
+    return;
+  }
 
-function request_log(error) {
   app.log.warn({ err: error }, '上游调用失败');
+  reply.code(502).send({ error: 'upstream_failed', message: error.message });
 }
 
 // MARK: - 路由
