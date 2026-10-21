@@ -12,9 +12,12 @@ struct ProfileView: View {
     @State private var sleepTimerOn = false
     /// 睡眠定时的计时任务。非 nil 就表示"正在倒计时"。
     @State private var sleepTask: Task<Void, Never>?
-    @State private var detail: ProfileDetail?
+    /// 这一页的浮层。
+    ///
+    /// **必须合成一个**：同一个视图上挂两个 `.sheet` 时 SwiftUI 只认最后一个 ——
+    /// 之前账户卡设了 `sheet = .detail(.account)`，弹出的却是后挂的登录二维码。
+    @State private var sheet: ProfileSheet?
     @State private var showsLogoutConfirm = false
-    @State private var showsLogin = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -39,28 +42,31 @@ struct ProfileView: View {
 
             ScreenHeader(title: "我的", scrollOffset: scrollOffset) {
                 HeaderIconButton(systemName: "gearshape") {
-                    detail = .about
+                    sheet = .detail(.about)
                 }
             }
             .padding(.horizontal, LiquidTheme.Spacing.md)
             .padding(.top, 4)
         }
-        .sheet(item: $detail) { item in
-            ProfileDetailSheet(detail: item)
-                .environment(player)
+        .sheet(item: $sheet) { item in
+            switch item {
+            case .detail(let detail):
+                ProfileDetailSheet(detail: detail)
+                    .environment(player)
+                    .environment(library)
+            case .login:
+                NeteaseLoginSheet()
+                    .environment(playlists)
+            }
         }
         .onAppear {
             // 截图用：-detail <name> 直接打开某个浮层（login 是扫码登录页）
             guard let raw = DebugLaunch.profileDetail else { return }
             if raw == "login" {
-                showsLogin = true
+                sheet = .login
             } else if let parsed = ProfileDetail(rawValue: raw) {
-                detail = parsed
+                sheet = .detail(parsed)
             }
-        }
-        .sheet(isPresented: $showsLogin) {
-            NeteaseLoginSheet()
-                .environment(playlists)
         }
         .confirmationDialog("退出登录", isPresented: $showsLogoutConfirm, titleVisibility: .visible) {
             Button("退出登录", role: .destructive) {
@@ -107,9 +113,9 @@ struct ProfileView: View {
     private var profileCard: some View {
         Button {
             if session.isLoggedIn {
-                detail = .account
+                sheet = .detail(.account)
             } else {
-                showsLogin = true
+                sheet = .login
             }
         } label: {
             HStack(spacing: LiquidTheme.Spacing.md) {
@@ -241,7 +247,7 @@ struct ProfileView: View {
                     title: "音质与下载",
                     value: AudioQuality.current.title
                 ) {
-                    detail = .quality
+                    sheet = .detail(.quality)
                 }
 
                 rowDivider
@@ -273,7 +279,7 @@ struct ProfileView: View {
                     title: "账号与安全",
                     value: nil
                 ) {
-                    detail = .account
+                    sheet = .detail(.account)
                 }
 
                 rowDivider
@@ -284,7 +290,7 @@ struct ProfileView: View {
                     title: "音乐库",
                     value: "\(library.songs.count) 首"
                 ) {
-                    detail = .downloads
+                    sheet = .detail(.downloads)
                 }
 
                 rowDivider
@@ -295,7 +301,7 @@ struct ProfileView: View {
                     title: "服务器",
                     value: serverSummary
                 ) {
-                    detail = .server
+                    sheet = .detail(.server)
                 }
 
                 rowDivider
@@ -306,7 +312,7 @@ struct ProfileView: View {
                     title: "关于 BhandsMusic",
                     value: "v1.0.0"
                 ) {
-                    detail = .about
+                    sheet = .detail(.about)
                 }
             }
             .glassPanel()

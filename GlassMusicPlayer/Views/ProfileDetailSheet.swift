@@ -60,6 +60,22 @@ enum ProfileDetail: String, Identifiable {
     }
 }
 
+/// 「我的」页可能弹出的浮层，**合并成一个枚举是必须的**。
+///
+/// 同一个视图上挂两个 `.sheet` 时 SwiftUI 只认最后一个 ——
+/// 之前账户卡明明设了"打开账号详情"，弹出的却是后挂的登录二维码。
+enum ProfileSheet: Identifiable {
+    case detail(ProfileDetail)
+    case login
+
+    var id: String {
+        switch self {
+        case .detail(let detail): return detail.id
+        case .login: return "login"
+        }
+    }
+}
+
 /// 统一的详情浮层 —— 四个导航行共用一套外壳，只换内容。
 struct ProfileDetailSheet: View {
     let detail: ProfileDetail
@@ -90,7 +106,10 @@ struct ProfileDetailSheet: View {
             }
             .scrollIndicators(.hidden)
         }
-        .presentationDetents([.medium, .large])
+        // **必须是 [.large]**。用 [.medium, .large] 时，
+        // 内容比 medium 高的那两个（关于、音乐库）sheet 会**完全不弹** ——
+        // 点了没反应，而且不报错。实测「关于」和「音乐库」都是这样。
+        .presentationDetents([.large])
         .presentationBackground(.clear)
         .presentationDragIndicator(.visible)
     }
@@ -334,9 +353,17 @@ struct ProfileDetailSheet: View {
     private var aboutContent: some View {
         VStack(alignment: .leading, spacing: LiquidTheme.Spacing.md) {
             VStack(spacing: LiquidTheme.Spacing.xs) {
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 56, weight: .light))
-                    .foregroundStyle(LiquidTheme.Palette.accent)
+                // 用真正的桌面图标，不再是 SF Symbol
+                Image("app_icon")
+                    .resizable()
+                    .frame(width: 68, height: 68)
+                    // iOS 图标圆角 ≈ 边长 × 0.2237
+                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+                    }
+                    .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
 
                 Text("BhandsMusic")
                     .font(LiquidTheme.Typography.section)
@@ -352,7 +379,7 @@ struct ProfileDetailSheet: View {
             VStack(spacing: 0) {
                 infoRow("音源", "打包音轨 · 网络电台 · 网易云")
                 divider
-                infoRow("音轨", "8 首自合成环境音乐")
+                infoRow("音轨", "\(library.songs.count) 首可播曲目")
                 divider
                 infoRow("电台", "\(RadioCatalog.stations.count) 个公开直播流")
                 divider
