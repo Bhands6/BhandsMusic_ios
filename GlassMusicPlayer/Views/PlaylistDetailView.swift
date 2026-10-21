@@ -76,7 +76,12 @@ struct PlaylistDetailView: View {
 
     private var coverHeader: some View {
         VStack(spacing: LiquidTheme.Spacing.md) {
-            PlaylistCover(playlist: playlist, cornerRadius: LiquidTheme.Radius.card, symbolSize: 52)
+            PlaylistCover(
+                playlist: playlist,
+                cornerRadius: LiquidTheme.Radius.card,
+                symbolSize: 52,
+                songs: songs
+            )
                 .frame(width: 208, height: 208)
                 .scaleEffect(coverScale)
                 .opacity(coverOpacity)

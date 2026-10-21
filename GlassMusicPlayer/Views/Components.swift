@@ -84,8 +84,29 @@ struct PlaylistCover: View {
     let playlist: Playlist
     var cornerRadius: CGFloat = LiquidTheme.Radius.tile
     var symbolSize: CGFloat = 26
+    /// 传进来就用前 4 首的专辑封面拼 2×2；不传（或凑不齐 4 张）退回渐变+图标。
+    var songs: [Song] = []
+
+    private var covers: [String] {
+        songs.prefix(4).map(\.artworkName).filter { $0.hasPrefix("http") }
+    }
 
     var body: some View {
+        Group {
+            if covers.count >= 4 {
+                mosaic
+            } else {
+                gradient
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+        }
+    }
+
+    private var gradient: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(
                 LinearGradient(
@@ -99,10 +120,32 @@ struct PlaylistCover: View {
                     .font(.system(size: symbolSize, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.92))
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+    }
+
+    /// 歌单自己没有封面图（是按关键词拉出来的虚拟歌单），但曲目有 ——
+    /// 拿前 4 首拼一张，比渐变加图标更像"真歌单"。
+    private var mosaic: some View {
+        GeometryReader { geometry in
+            let gap: CGFloat = 1
+            let tile = (geometry.size.width - gap) / 2
+
+            VStack(spacing: gap) {
+                HStack(spacing: gap) {
+                    tileView(0, tile)
+                    tileView(1, tile)
+                }
+                HStack(spacing: gap) {
+                    tileView(2, tile)
+                    tileView(3, tile)
+                }
             }
+        }
+    }
+
+    private func tileView(_ index: Int, _ size: CGFloat) -> some View {
+        ArtworkView(name: covers[index], cornerRadius: 0)
+            .frame(width: size, height: size)
+            .clipped()
     }
 }
 

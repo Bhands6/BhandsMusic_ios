@@ -235,8 +235,13 @@ struct HomeView: View {
 
     private func playlistCard(_ playlist: Playlist) -> some View {
         VStack(alignment: .leading, spacing: LiquidTheme.Spacing.xs) {
-            PlaylistCover(playlist: playlist, cornerRadius: LiquidTheme.Radius.tile, symbolSize: 22)
-                .aspectRatio(1, contentMode: .fit)
+            PlaylistCover(
+                playlist: playlist,
+                cornerRadius: LiquidTheme.Radius.tile,
+                symbolSize: 22,
+                songs: playlists.songs(for: playlist)
+            )
+            .aspectRatio(1, contentMode: .fit)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(playlist.title)
