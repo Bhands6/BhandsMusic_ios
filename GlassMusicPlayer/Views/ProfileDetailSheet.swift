@@ -52,7 +52,7 @@ enum ProfileDetail: String, Identifiable {
     var title: String {
         switch self {
         case .quality: return "音质与下载"
-        case .downloads: return "已下载"
+        case .downloads: return "音乐库"
         case .about: return "关于 BhandsMusic"
         case .account: return "账号与安全"
         case .server: return "服务器"
@@ -66,6 +66,7 @@ struct ProfileDetailSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(NeteaseSession.self) private var session
+    @Environment(LibraryStore.self) private var library
     @State private var quality = AudioQuality.current
     @State private var serverURL = ServerSettings.baseURLString
     @State private var apiKey = ServerSettings.apiKey
@@ -289,13 +290,13 @@ struct ProfileDetailSheet: View {
 
     private var downloadsContent: some View {
         VStack(alignment: .leading, spacing: LiquidTheme.Spacing.sm) {
-            Text("打包在 App 里的音轨，离线可播。")
+            Text("当前音乐库的曲目。")
                 .font(LiquidTheme.Typography.caption)
                 .foregroundStyle(LiquidTheme.Palette.secondary)
                 .padding(.horizontal, LiquidTheme.Spacing.screenH)
 
             VStack(spacing: 0) {
-                ForEach(Array(MusicLibrary.songs.enumerated()), id: \.element.id) { index, song in
+                ForEach(Array(library.songs.enumerated()), id: \.element.id) { index, song in
                     if index > 0 { divider }
 
                     HStack(spacing: LiquidTheme.Spacing.sm) {

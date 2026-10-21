@@ -4,6 +4,7 @@ import SwiftUI
 struct ProfileView: View {
     @Environment(PlayerModel.self) private var player
     @Environment(PlaylistStore.self) private var playlists
+    @Environment(LibraryStore.self) private var library
     @Environment(NeteaseSession.self) private var session
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -279,8 +280,8 @@ struct ProfileView: View {
                 navigationRow(
                     icon: "arrow.down.circle.fill",
                     tint: Color(hex: 0x0984E3),
-                    title: "已下载",
-                    value: "\(MusicLibrary.songs.count) 首"
+                    title: "音乐库",
+                    value: "\(library.songs.count) 首"
                 ) {
                     detail = .downloads
                 }

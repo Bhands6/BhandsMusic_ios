@@ -8,6 +8,7 @@ struct SearchView: View {
     var isModal: Bool = true
 
     @Environment(PlayerModel.self) private var player
+    @Environment(LibraryStore.self) private var library
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -28,7 +29,7 @@ struct SearchView: View {
     private var results: [Song] {
         let keyword = query.trimmingCharacters(in: .whitespaces)
         guard !keyword.isEmpty else { return [] }
-        return MusicLibrary.songs.filter {
+        return library.songs.filter {
             $0.title.localizedCaseInsensitiveContains(keyword)
             || $0.artist.localizedCaseInsensitiveContains(keyword)
             || $0.album.localizedCaseInsensitiveContains(keyword)

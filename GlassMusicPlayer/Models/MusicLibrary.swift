@@ -30,7 +30,7 @@ struct Song: Identifiable, Hashable {
     let duration: TimeInterval
     let year: Int
     let plays: Int
-    let artworkName: String
+    var artworkName: String
     /// 纯音乐留空，界面会显示「纯音乐 · 暂无歌词」。
     /// 网易云曲目在播放时才拉歌词，所以这里是 `var`。
     var lyrics: [LyricLine]
@@ -407,6 +407,9 @@ enum RepeatMode {
 
 @Observable
 final class PlayerModel {
+    /// 用户是否真正开始过播放 —— 决定音乐库加载完后要不要替换队列
+    private(set) var hasStartedPlayback = false
+
     var queue: [Song] = MusicLibrary.songs
     var currentIndex: Int = 0
     var isPlaying: Bool = false
@@ -486,8 +489,18 @@ final class PlayerModel {
         }
     }
 
-    /// 清空队列，只留下正在播的这一首。
+    /// 音乐库解析完就换掉空闲队列。
     ///
+    /// 启动时队列里是打包音轨（保证离线可用），但用户还没播过 ——
+    /// 这时候换成真实曲库更合理。已经播过就别动，否则正在听的歌会被打断。
+    func adoptLibrary(_ songs: [Song]) {
+        guard !hasStartedPlayback, !songs.isEmpty else { return }
+        queue = songs
+        currentIndex = 0
+        loadCurrent(autoplay: false)
+    }
+
+    /// 清空队列，只留下正在播的这一首。    ///
     /// 语义和 Apple Music 的 Clear 一致：**不是把当前歌也停掉**，
     /// 而是把"接下来要播的"清干净。真要停止播放是暂停按钮的事。
     func clearUpNext() {
@@ -604,6 +617,8 @@ final class PlayerModel {
     private func loadCurrent(autoplay: Bool) {
         progress = 0
         isPlaying = autoplay
+        // 一旦真的开始播，音乐库加载完就不该再换队列了
+        if autoplay { hasStartedPlayback = true }
 
         // 网易云：先异步取播放地址，取到再装载
         if case .netease(let id) = current.source {

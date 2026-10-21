@@ -3,6 +3,7 @@ import SwiftUI
 /// 音乐库 —— 三种视图（歌曲 / 专辑 / 艺人）共用同一个稳固底和同一个悬浮头部。
 struct LibraryView: View {
     @Environment(PlayerModel.self) private var player
+    @Environment(LibraryStore.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var scrollOffset: CGFloat = 0
@@ -12,7 +13,7 @@ struct LibraryView: View {
     private let segments = ["歌曲", "专辑", "艺人"]
 
     private var sortedSongs: [Song] {
-        MusicLibrary.songs.sorted {
+        library.songs.sorted {
             sortDescending ? $0.plays > $1.plays : $0.title < $1.title
         }
     }
@@ -57,7 +58,7 @@ struct LibraryView: View {
                 .font(LiquidTheme.Typography.hero)
                 .foregroundStyle(LiquidTheme.Palette.label)
 
-            Text("\(MusicLibrary.songs.count) 首歌曲 · \(MusicLibrary.albums.count) 张专辑 · \(MusicLibrary.artists.count) 位艺人")
+            Text("\(library.songs.count) 首歌曲 · \(library.albums.count) 张专辑 · \(library.artists.count) 位艺人")
                 .font(LiquidTheme.Typography.rowMeta)
                 .foregroundStyle(LiquidTheme.Palette.secondary)
         }
@@ -142,9 +143,9 @@ struct LibraryView: View {
             ],
             spacing: LiquidTheme.Spacing.lg
         ) {
-            ForEach(MusicLibrary.albums) { album in
+            ForEach(library.albums) { album in
                 Button {
-                    if let song = MusicLibrary.songs.first(where: { $0.album == album.title }) {
+                    if let song = library.songs.first(where: { $0.album == album.title }) {
                         player.play(song)
                     }
                 } label: {
@@ -173,11 +174,11 @@ struct LibraryView: View {
 
     private var artistList: some View {
         VStack(spacing: 0) {
-            ForEach(Array(MusicLibrary.artists.enumerated()), id: \.element.id) { index, artist in
+            ForEach(Array(library.artists.enumerated()), id: \.element.id) { index, artist in
                 if index > 0 { hairline(leading: 78) }
 
                 Button {
-                    if let song = MusicLibrary.songs.first(where: { $0.artist == artist.name }) {
+                    if let song = library.songs.first(where: { $0.artist == artist.name }) {
                         player.play(song)
                     }
                 } label: {

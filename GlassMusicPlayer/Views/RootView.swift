@@ -11,6 +11,8 @@ struct RootView: View {
     @State private var player = PlayerModel()
     /// 歌单的远程曲库（网易云）。本地只有 8 首，撑不起 30 首的歌单。
     @State private var playlists = PlaylistStore()
+    /// 音乐库：先用打包音轨，随后按清单从网易云解析真实曲目
+    @State private var library = LibraryStore()
     @State private var selection = DebugLaunch.initialTab
     @State private var showsNowPlaying = DebugLaunch.opensNowPlaying
 
@@ -52,6 +54,7 @@ struct RootView: View {
         }
         .environment(player)
         .environment(playlists)
+        .environment(library)
         .environment(NeteaseSession.shared)
         // 内容与 chrome 一起延伸到屏幕底部。
         // iOS 26 的浮动 Tab Bar 就贴在这个位置：下方只留 ~16pt 给 Home Indicator，
@@ -72,6 +75,8 @@ struct RootView: View {
             }
             // 歌单的真实曲库（网易云）。失败会静默退回本地选曲。
             await playlists.loadAll()
+            await library.load()
+            player.adoptLibrary(library.songs)
             // 有本地 cookie 的话顺手刷一次账号信息（cookie 失效会自动清掉）
             await NeteaseSession.shared.refreshAccount()
         }

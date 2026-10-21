@@ -6,6 +6,7 @@ import SwiftUI
 /// → 悬浮玻璃头部覆盖其上。滚动时大标题滚走、头部标题淡入。
 struct HomeView: View {
     @Environment(PlayerModel.self) private var player
+    @Environment(LibraryStore.self) private var library
     @Environment(PlaylistStore.self) private var playlists
     @Environment(NeteaseSession.self) private var session
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -84,7 +85,7 @@ struct HomeView: View {
 
             // 日期不再单独占一行 —— 一行 overline 会把大标题往下顶 18pt，
             // 顶部就显得空。并进副标题，信息不丢，版面收紧。
-            Text("\(Self.dateText) · 为你挑选的 \(MusicLibrary.songs.count) 首单曲，共 \(totalHours) 小时")
+            Text("\(Self.dateText) · 为你挑选的 \(library.songs.count) 首单曲，共 \(totalHours) 小时")
                 .font(LiquidTheme.Typography.rowMeta)
                 .foregroundStyle(LiquidTheme.Palette.secondary)
                 .lineLimit(1)
@@ -94,7 +95,7 @@ struct HomeView: View {
     }
 
     private var totalHours: Int {
-        let seconds = MusicLibrary.songs.reduce(0) { $0 + $1.duration }
+        let seconds = library.songs.reduce(0) { $0 + $1.duration }
         return max(1, Int(seconds / 3600))
     }
 
