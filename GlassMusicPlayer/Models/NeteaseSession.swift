@@ -57,13 +57,37 @@ final class NeteaseSession {
         // 旧版本把 cookie 存在 UserDefaults 里，读一次迁移到 Keychain
         if let legacy = UserDefaults.standard.string(forKey: cookieKey) {
             Keychain.set(legacy, for: cookieKey)
-            UserDefaults.standard.removeObject(forKey: cookieKey)
         }
 
-        cookie = Keychain.get(cookieKey)
+        // Keychain 优先，读不到再退回 UserDefaults。
+        //
+        // 为什么要这个兜底：**未签名的模拟器构建，keychain access group 每次安装都可能变**，
+        // SecItemCopyMatching 会返回 nil —— 实测重装几次后 cookie 就"丢了"，
+        // 但账号信息（UserDefaults）还在，于是界面显示已登录、点进去却弹二维码。
+        cookie = Keychain.get(cookieKey) ?? debugFallbackCookie
+
         if let data = UserDefaults.standard.data(forKey: accountKey) {
             account = try? JSONDecoder().decode(Account.self, from: data)
         }
+
+        // **登录态必须自洽**：没有 cookie 就说明登录已失效，
+        // 不能留着账号信息让界面显示"已登录"。
+        if cookie == nil, account != nil {
+            account = nil
+            UserDefaults.standard.removeObject(forKey: accountKey)
+        }
+    }
+
+    /// 模拟器未签名构建的 keychain access group 每次安装可能变，
+    /// `SecItemCopyMatching` 会返回 nil —— 实测重装几次后 cookie 就"丢了"。
+    /// 所以 **只在 DEBUG 下**额外存一份到 UserDefaults 兜底。
+    /// Release 构建只走 Keychain（凭证不该落在 plist 里）。
+    private var debugFallbackCookie: String? {
+        #if DEBUG
+        return UserDefaults.standard.string(forKey: cookieKey)
+        #else
+        return nil
+        #endif
     }
 
     // MARK: - 登录 / 登出
@@ -75,6 +99,10 @@ final class NeteaseSession {
     func signIn(cookie: String) async {
         self.cookie = cookie
         Keychain.set(cookie, for: cookieKey)
+        #if DEBUG
+        // 模拟器兜底，见 debugFallbackCookie 的说明。Release 不写。
+        UserDefaults.standard.set(cookie, forKey: cookieKey)
+        #endif
         await refreshAccount()
     }
 
@@ -84,6 +112,7 @@ final class NeteaseSession {
         myPlaylists = []
         lastError = nil
         Keychain.delete(cookieKey)
+        UserDefaults.standard.removeObject(forKey: cookieKey)
         UserDefaults.standard.removeObject(forKey: accountKey)
     }
 
