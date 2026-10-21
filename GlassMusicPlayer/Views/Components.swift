@@ -84,17 +84,21 @@ struct PlaylistCover: View {
     let playlist: Playlist
     var cornerRadius: CGFloat = LiquidTheme.Radius.tile
     var symbolSize: CGFloat = 26
-    /// 传进来就用前 4 首的专辑封面拼 2×2；不传（或凑不齐 4 张）退回渐变+图标。
+    /// 传进来就用第一首的专辑封面；不传（或没有封面）退回渐变+图标。
     var songs: [Song] = []
 
-    private var covers: [String] {
-        songs.prefix(4).map(\.artworkName).filter { $0.hasPrefix("http") }
+    /// 取第一首有封面的曲目。
+    ///
+    /// 试过用前 4 首拼 2×2 —— 视觉上太碎，四张小图挤在 113pt 里看不清任何一张。
+    /// 单张更有识别度，也更像"这个歌单的代表作"。
+    private var coverName: String? {
+        songs.first { $0.artworkName.hasPrefix("http") }?.artworkName
     }
 
     var body: some View {
         Group {
-            if covers.count >= 4 {
-                mosaic
+            if let coverName {
+                ArtworkView(name: coverName, cornerRadius: 0)
             } else {
                 gradient
             }
@@ -120,32 +124,6 @@ struct PlaylistCover: View {
                     .font(.system(size: symbolSize, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.92))
             }
-    }
-
-    /// 歌单自己没有封面图（是按关键词拉出来的虚拟歌单），但曲目有 ——
-    /// 拿前 4 首拼一张，比渐变加图标更像"真歌单"。
-    private var mosaic: some View {
-        GeometryReader { geometry in
-            let gap: CGFloat = 1
-            let tile = (geometry.size.width - gap) / 2
-
-            VStack(spacing: gap) {
-                HStack(spacing: gap) {
-                    tileView(0, tile)
-                    tileView(1, tile)
-                }
-                HStack(spacing: gap) {
-                    tileView(2, tile)
-                    tileView(3, tile)
-                }
-            }
-        }
-    }
-
-    private func tileView(_ index: Int, _ size: CGFloat) -> some View {
-        ArtworkView(name: covers[index], cornerRadius: 0)
-            .frame(width: size, height: size)
-            .clipped()
     }
 }
 
