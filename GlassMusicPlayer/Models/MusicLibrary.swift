@@ -686,4 +686,19 @@ extension Color {
             opacity: opacity
         )
     }
+
+    /// 同色相调暗，用来做渐变的暗端。
+    /// 比降低透明度更"实" —— 透明度在浅色背景上会发灰。
+    func darker(_ amount: CGFloat = 0.3) -> Color {
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        guard UIColor(self).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else {
+            return self
+        }
+        return Color(
+            hue: Double(hue),
+            saturation: Double(min(saturation * 1.12, 1)),
+            brightness: Double(max(brightness * (1 - amount), 0.08)),
+            opacity: Double(alpha)
+        )
+    }
 }

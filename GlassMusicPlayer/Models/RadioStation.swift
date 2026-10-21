@@ -13,18 +13,21 @@ struct RadioStation: Identifiable, Hashable {
     let style: String
     let url: URL
     let hex: UInt32
+    /// 卡片图标。15 个电台共用 `dot.radiowaves` 太单调，按各自风格分开。
+    let symbol: String
 
     var color: Color { Color(hex: hex) }
 
     /// 直接吃字符串形式的地址，省得列表里每条都写 `URL(string:)!`。
     /// 地址都是写死的合法字面量 —— 解析失败说明数据写错了，这里崩掉比静默降级更好排查。
-    init(id: String, name: String, scene: String, style: String, url: String, hex: UInt32) {
+    init(id: String, name: String, scene: String, style: String, url: String, hex: UInt32, symbol: String) {
         self.id = id
         self.name = name
         self.scene = scene
         self.style = style
         self.url = URL(string: url)!
         self.hex = hex
+        self.symbol = symbol
     }
 
     /// 转成可播放的曲目。电台没有专辑和歌词，`lyrics` 留空即显示「纯音乐」。
@@ -56,21 +59,21 @@ enum RadioCatalog {
     ///
     /// 这些是面向公众开放的网络电台，收听不需要授权。
     static let stations: [RadioStation] = [
-        .init(id: "lofi-box", name: "Lofi Box", scene: "学习", style: "Lofi · Chill", url: "https://boxradio-edge-00.streamafrica.net/lofi", hex: 0xA78BFA),
-        .init(id: "lofi-cafe-studying", name: "Lofi Studying", scene: "学习", style: "Lofi · Study", url: "https://radio.loficafe.net/listen/studying/radio.mp3", hex: 0x3B82F6),
-        .init(id: "lofi-cafe-japanese", name: "Lofi Japanese", scene: "阅读", style: "Japanese · Lofi", url: "https://radio.loficafe.net/listen/japanese-lofi/radio.mp3", hex: 0xF472B6),
-        .init(id: "jazz-box", name: "Jazz Box", scene: "阅读", style: "Jazz · Smooth", url: "https://boxradio-edge-01.streamafrica.net/jazz", hex: 0xD946EF),
-        .init(id: "b3cks-radio", name: "B3cks Radio", scene: "阅读", style: "Lofi · Relax", url: "https://radio.b3ck.com/listen/b3cks-radio/radio.mp3", hex: 0xFF7096),
-        .init(id: "chill-wave", name: "Chill Wave", scene: "放松", style: "Chill · Electro", url: "https://boxradio-edge-00.streamafrica.net/chillwave", hex: 0xEC4899),
-        .init(id: "lofi-cafe-chilling", name: "Lofi Chilling", scene: "放松", style: "Lofi · Chill", url: "https://radio.loficafe.net/listen/chilling/radio.mp3", hex: 0xF65C71),
-        .init(id: "paradise", name: "Paradise", scene: "放松", style: "Chill · Alt", url: "https://stream.radioparadise.com/mellow-128", hex: 0xF59E0B),
-        .init(id: "freecodecamp-coderadio", name: "Code Radio", scene: "编程", style: "Lofi · Coding", url: "https://coderadio-admin-v2.freecodecamp.org/listen/coderadio/radio.mp3", hex: 0x9050B3),
-        .init(id: "rain-sounds", name: "Rain Sounds", scene: "助眠", style: "Ambient · Nature", url: "https://boxradio-edge-01.streamafrica.net/rain", hex: 0x0EA5E9),
-        .init(id: "lofi-cafe-sleeping", name: "Lofi Sleeping", scene: "助眠", style: "Lofi · Sleep", url: "https://radio.loficafe.net/listen/sleeping/radio.mp3", hex: 0x498EEF),
-        .init(id: "asp", name: "ASP", scene: "助眠", style: "Ambient · Sleep", url: "https://radio.stereoscenic.com/asp-s", hex: 0x6366F1),
-        .init(id: "jazz-smooth", name: "Jazz Smooth", scene: "办公", style: "Jazz · Mellow", url: "https://smoothjazz.cdnstream1.com/2585_128.mp3", hex: 0xA855F7),
-        .init(id: "rap", name: "Rap Beats", scene: "运动", style: "Hip-Hop · Beats", url: "https://boxradio-edge-00.streamafrica.net/rap", hex: 0xF43F5E),
-        .init(id: "lofi-cafe-gaming", name: "Lofi Gaming", scene: "娱乐", style: "Lofi · Gaming", url: "https://radio.loficafe.net/listen/gaming/radio.mp3", hex: 0x22C55E)
+        .init(id: "lofi-box", name: "Lofi Box", scene: "学习", style: "Lofi · Chill", url: "https://boxradio-edge-00.streamafrica.net/lofi", hex: 0xA78BFA, symbol: "headphones"),
+        .init(id: "lofi-cafe-studying", name: "Lofi Studying", scene: "学习", style: "Lofi · Study", url: "https://radio.loficafe.net/listen/studying/radio.mp3", hex: 0x3B82F6, symbol: "book.closed.fill"),
+        .init(id: "lofi-cafe-japanese", name: "Lofi Japanese", scene: "阅读", style: "Japanese · Lofi", url: "https://radio.loficafe.net/listen/japanese-lofi/radio.mp3", hex: 0xF472B6, symbol: "leaf.fill"),
+        .init(id: "jazz-box", name: "Jazz Box", scene: "阅读", style: "Jazz · Smooth", url: "https://boxradio-edge-01.streamafrica.net/jazz", hex: 0xD946EF, symbol: "music.quarternote.3"),
+        .init(id: "b3cks-radio", name: "B3cks Radio", scene: "阅读", style: "Lofi · Relax", url: "https://radio.b3ck.com/listen/b3cks-radio/radio.mp3", hex: 0xFF7096, symbol: "radio.fill"),
+        .init(id: "chill-wave", name: "Chill Wave", scene: "放松", style: "Chill · Electro", url: "https://boxradio-edge-00.streamafrica.net/chillwave", hex: 0xEC4899, symbol: "water.waves"),
+        .init(id: "lofi-cafe-chilling", name: "Lofi Chilling", scene: "放松", style: "Lofi · Chill", url: "https://radio.loficafe.net/listen/chilling/radio.mp3", hex: 0xF65C71, symbol: "cup.and.saucer.fill"),
+        .init(id: "paradise", name: "Paradise", scene: "放松", style: "Chill · Alt", url: "https://stream.radioparadise.com/mellow-128", hex: 0xF59E0B, symbol: "sun.horizon.fill"),
+        .init(id: "freecodecamp-coderadio", name: "Code Radio", scene: "编程", style: "Lofi · Coding", url: "https://coderadio-admin-v2.freecodecamp.org/listen/coderadio/radio.mp3", hex: 0x9050B3, symbol: "chevron.left.forwardslash.chevron.right"),
+        .init(id: "rain-sounds", name: "Rain Sounds", scene: "助眠", style: "Ambient · Nature", url: "https://boxradio-edge-01.streamafrica.net/rain", hex: 0x0EA5E9, symbol: "cloud.rain.fill"),
+        .init(id: "lofi-cafe-sleeping", name: "Lofi Sleeping", scene: "助眠", style: "Lofi · Sleep", url: "https://radio.loficafe.net/listen/sleeping/radio.mp3", hex: 0x498EEF, symbol: "moon.zzz.fill"),
+        .init(id: "asp", name: "ASP", scene: "助眠", style: "Ambient · Sleep", url: "https://radio.stereoscenic.com/asp-s", hex: 0x6366F1, symbol: "sparkles"),
+        .init(id: "jazz-smooth", name: "Jazz Smooth", scene: "办公", style: "Jazz · Mellow", url: "https://smoothjazz.cdnstream1.com/2585_128.mp3", hex: 0xA855F7, symbol: "music.note"),
+        .init(id: "rap", name: "Rap Beats", scene: "运动", style: "Hip-Hop · Beats", url: "https://boxradio-edge-00.streamafrica.net/rap", hex: 0xF43F5E, symbol: "waveform.path"),
+        .init(id: "lofi-cafe-gaming", name: "Lofi Gaming", scene: "娱乐", style: "Lofi · Gaming", url: "https://radio.loficafe.net/listen/gaming/radio.mp3", hex: 0x22C55E, symbol: "gamecontroller.fill")
     ]
 
     /// 电台对应的曲目队列 —— 点任意一台就按整个列表播，切歌即换台。

@@ -291,15 +291,28 @@ struct HomeView: View {
                     RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [station.color.opacity(0.92), station.color.opacity(0.42)],
+                                colors: [station.color, station.color.darker(0.34)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
 
-                    Image(systemName: isCurrent ? "waveform" : "dot.radiowaves.left.and.right")
-                        .font(.system(size: 30, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.94))
+                    // 柔光：让图标不像"贴在色块上"
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [.white.opacity(0.26), .clear],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 56
+                            )
+                        )
+                        .frame(width: 116, height: 116)
+
+                    Image(systemName: isCurrent ? "waveform" : station.symbol)
+                        .font(.system(size: 34, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.96))
+                        .shadow(color: .black.opacity(0.16), radius: 6, y: 2)
                         .symbolEffect(.variableColor.iterative, isActive: isCurrent && player.isPlaying)
                 }
                 .frame(width: 128, height: 128)
