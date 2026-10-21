@@ -121,10 +121,38 @@ final class AudioEngine {
             // 直播流：没有时长，告诉系统这是 live
             info[MPNowPlayingInfoPropertyIsLiveStream] = true
         }
-        if let cover = UIImage(named: artworkName) {
+        if let cover = coverImage(named: artworkName) {
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: cover.size) { _ in cover }
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+
+        // 远程封面还没下过：先不带图，下完再补上。
+        // 之前这里只用 UIImage(named:)，而它只认本地资源 ——
+        // 网易云曲目的 artworkName 是 URL，锁屏上一直没有封面。
+        if coverImage(named: artworkName) == nil,
+           artworkName.hasPrefix("http"),
+           let url = URL(string: artworkName) {
+            Task { @MainActor in
+                guard let (data, _) = try? await URLSession.shared.data(from: url),
+                      let image = UIImage(data: data) else { return }
+                ImageCache.shared.store(image, for: url)
+                self.attachArtwork(image)
+            }
+        }
+    }
+
+    /// 把封面补进已有的锁屏信息里，不动其它字段。
+    private func attachArtwork(_ image: UIImage) {
+        guard var info = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return }
+        info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    /// 本地资源按名字取；远程封面走内存缓存（UI 里通常已经下过了）。
+    private func coverImage(named name: String) -> UIImage? {
+        guard name.hasPrefix("http") else { return UIImage(named: name) }
+        guard let url = URL(string: name) else { return nil }
+        return ImageCache.shared.image(for: url)
     }
 
     private func configureRemoteCommands() {
