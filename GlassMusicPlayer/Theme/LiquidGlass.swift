@@ -148,13 +148,8 @@ struct ArtworkBackdrop: View {
             .overlay {
                 if let artworkName {
                     if artworkName.hasPrefix("http") {
-                        AsyncImage(url: URL(string: artworkName)) { phase in
-                            if let image = phase.image {
-                                image.resizable().scaledToFill().blur(radius: 70, opaque: true)
-                            } else {
-                                FallbackArtwork(seed: artworkName).blur(radius: 70, opaque: true)
-                            }
-                        }
+                        RemoteImage(url: URL(string: artworkName), placeholderSeed: artworkName)
+                            .blur(radius: 70, opaque: true)
                     } else if let image = UIImage(named: artworkName) {
                         Image(uiImage: image)
                             .resizable()

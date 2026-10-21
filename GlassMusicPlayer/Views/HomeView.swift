@@ -135,14 +135,8 @@ struct HomeView: View {
             selectedNeteasePlaylist = playlist
         } label: {
             VStack(alignment: .leading, spacing: LiquidTheme.Spacing.xs) {
-                AsyncImage(url: playlist.cover) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        FallbackArtwork(seed: playlist.name)
-                    }
-                }
-                .frame(width: 130, height: 130)
+                RemoteImage(url: playlist.cover, placeholderSeed: playlist.name)
+                    .frame(width: 130, height: 130)
                 .clipShape(RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous)

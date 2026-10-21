@@ -41,14 +41,8 @@ struct NeteasePlaylistSheet: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: LiquidTheme.Spacing.md) {
-            AsyncImage(url: playlist.cover) { phase in
-                if let image = phase.image {
-                    image.resizable().scaledToFill()
-                } else {
-                    FallbackArtwork(seed: playlist.name)
-                }
-            }
-            .frame(width: 96, height: 96)
+            RemoteImage(url: playlist.cover, placeholderSeed: playlist.name)
+                .frame(width: 96, height: 96)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {

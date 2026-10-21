@@ -14,14 +14,8 @@ struct ArtworkView: View {
         Color.clear
             .overlay {
                 if name.hasPrefix("http") {
-                    // 远程封面（网易云等）：走异步加载，加载中/失败都退回兜底渐变
-                    AsyncImage(url: URL(string: name)) { phase in
-                        if let image = phase.image {
-                            image.resizable().scaledToFill()
-                        } else {
-                            FallbackArtwork(seed: name)
-                        }
-                    }
+                    // 远程封面（网易云等）。走带缓存的加载器 —— AsyncImage 每次重建都重下，滚动会闪
+                    RemoteImage(url: URL(string: name), placeholderSeed: name)
                 } else if let image = UIImage(named: name) {
                     Image(uiImage: image)
                         .resizable()
@@ -80,6 +74,70 @@ struct FallbackArtwork: View {
 }
 
 /// 歌单封面：渐变 + 符号。真实产品里编辑部歌单就是这样生成的，不需要额外图片资源。
+// MARK: - 远程图片
+
+/// 远程图片的内存缓存。全部在主线程访问（SwiftUI 视图生命周期），不加锁。
+final class ImageCache {
+    static let shared = ImageCache()
+
+    private var images: [URL: UIImage] = [:]
+    /// 简单上限，超了整体清空 —— 缩略图能重下，不必做 LRU
+    private let limit = 240
+
+    func image(for url: URL) -> UIImage? { images[url] }
+
+    func store(_ image: UIImage, for url: URL) {
+        if images.count >= limit { images.removeAll(keepingCapacity: true) }
+        images[url] = image
+    }
+}
+
+/// 带缓存的远程图片。
+///
+/// **为什么不用 `AsyncImage`**：它不做缓存，而且每次视图重建都从 `.empty` 阶段开始。
+/// 列表滚动时单元格被回收重建，图片就会闪一下（占位 → 图片 → 占位…）。
+///
+/// 这里在 `init` 里**同步**读内存缓存 —— 重建时第一帧就有图，不闪。
+struct RemoteImage: View {
+    let url: URL?
+    var placeholderSeed: String = ""
+
+    @State private var image: UIImage?
+
+    init(url: URL?, placeholderSeed: String = "") {
+        self.url = url
+        self.placeholderSeed = placeholderSeed
+        // 关键：初始化时就同步取缓存，不等 body 之后
+        _image = State(initialValue: url.flatMap { ImageCache.shared.image(for: $0) })
+    }
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                FallbackArtwork(seed: placeholderSeed)
+            }
+        }
+        .task(id: url) {
+            guard image == nil, let url else { return }
+
+            if let cached = ImageCache.shared.image(for: url) {
+                image = cached
+                return
+            }
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let loaded = UIImage(data: data)
+            else { return }
+
+            ImageCache.shared.store(loaded, for: url)
+            image = loaded
+        }
+    }
+}
+
 struct PlaylistCover: View {
     let playlist: Playlist
     var cornerRadius: CGFloat = LiquidTheme.Radius.tile
