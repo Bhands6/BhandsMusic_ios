@@ -54,7 +54,13 @@ final class NeteaseSession {
     private let accountKey = "neteaseAccount"
 
     private init() {
-        cookie = UserDefaults.standard.string(forKey: cookieKey)
+        // 旧版本把 cookie 存在 UserDefaults 里，读一次迁移到 Keychain
+        if let legacy = UserDefaults.standard.string(forKey: cookieKey) {
+            Keychain.set(legacy, for: cookieKey)
+            UserDefaults.standard.removeObject(forKey: cookieKey)
+        }
+
+        cookie = Keychain.get(cookieKey)
         if let data = UserDefaults.standard.data(forKey: accountKey) {
             account = try? JSONDecoder().decode(Account.self, from: data)
         }
@@ -63,9 +69,12 @@ final class NeteaseSession {
     // MARK: - 登录 / 登出
 
     /// 扫码确认后调用：存下 cookie 并拉一次账号信息。
+    ///
+    /// cookie 存 **Keychain** —— 是凭证，而且卸载 App 不会丢。
+    /// 调试期间反复重装不至于每次都要重新扫码。
     func signIn(cookie: String) async {
         self.cookie = cookie
-        UserDefaults.standard.set(cookie, forKey: cookieKey)
+        Keychain.set(cookie, for: cookieKey)
         await refreshAccount()
     }
 
@@ -74,7 +83,7 @@ final class NeteaseSession {
         account = nil
         myPlaylists = []
         lastError = nil
-        UserDefaults.standard.removeObject(forKey: cookieKey)
+        Keychain.delete(cookieKey)
         UserDefaults.standard.removeObject(forKey: accountKey)
     }
 
@@ -96,12 +105,20 @@ final class NeteaseSession {
 
         do {
             let json = try await NeteaseAPI.rawGet("/user/account", [:])
+            let code = json["code"] as? Int ?? 200
+
             guard let profile = json["profile"] as? [String: Any],
                   let id = profile["userId"] as? Int,
                   let nickname = profile["nickname"] as? String
             else {
-                // 没拿到 profile 说明 cookie 已经无效了
-                signOut()
+                // **只有明确"未登录"才清 cookie。**
+                // 限流、上游抽风、超时都会走到这里，那些情况清掉登录态太粗暴 ——
+                // 用户会莫名其妙被登出，还得重新扫码。
+                if code == 301 {
+                    signOut()
+                } else {
+                    lastError = "账号信息获取失败（\(code)）"
+                }
                 return
             }
 
