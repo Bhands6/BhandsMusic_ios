@@ -1,5 +1,14 @@
 import Foundation
 
+/// 网易云歌单（用户自己的那些）。
+struct NeteasePlaylist: Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let cover: URL?
+    let trackCount: Int
+    let creator: String
+}
+
 /// 网易云登录态。
 ///
 /// 登录走**扫码**（`/login/qr/*`）—— 不在 App 里碰用户密码，
@@ -35,6 +44,7 @@ final class NeteaseSession {
 
     private(set) var cookie: String?
     private(set) var account: Account?
+    private(set) var myPlaylists: [NeteasePlaylist] = []
     private(set) var isLoading = false
     private(set) var lastError: String?
 
@@ -62,9 +72,20 @@ final class NeteaseSession {
     func signOut() {
         cookie = nil
         account = nil
+        myPlaylists = []
         lastError = nil
         UserDefaults.standard.removeObject(forKey: cookieKey)
         UserDefaults.standard.removeObject(forKey: accountKey)
+    }
+
+    /// 拉自己的歌单。登录后调用，首页「我的歌单」靠它。
+    func loadMyPlaylists() async {
+        guard let uid = account?.id else {
+            myPlaylists = []
+            return
+        }
+        guard let result = try? await NeteaseAPI.userPlaylists(uid: uid) else { return }
+        myPlaylists = result
     }
 
     /// 拉账号信息。cookie 失效时会清掉登录态。
@@ -96,6 +117,8 @@ final class NeteaseSession {
             if let data = try? JSONEncoder().encode(account) {
                 UserDefaults.standard.set(data, forKey: accountKey)
             }
+            // 账号信息到手后顺手拉歌单，首页直接有内容
+            await loadMyPlaylists()
         } catch {
             lastError = (error as? LocalizedError)?.errorDescription ?? "获取账号信息失败"
         }

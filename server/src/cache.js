@@ -52,4 +52,5 @@ export const TTL = {
   newsong: 10 * 60 * 1000,
   recommend: 10 * 60 * 1000,
   account: 60 * 1000,
+  playlist: 10 * 60 * 1000,
 };

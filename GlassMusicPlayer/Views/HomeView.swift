@@ -7,10 +7,12 @@ import SwiftUI
 struct HomeView: View {
     @Environment(PlayerModel.self) private var player
     @Environment(PlaylistStore.self) private var playlists
+    @Environment(NeteaseSession.self) private var session
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var scrollOffset: CGFloat = 0
     @State private var selectedPlaylist: Playlist?
+    @State private var selectedNeteasePlaylist: NeteasePlaylist?
     @State private var showsSearch = false
 
     var body: some View {
@@ -20,7 +22,12 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: LiquidTheme.Spacing.section) {
                     greeting
-                    recentlyPlayedSection
+                    // 登录了就展示自己账号下的歌单，没登录才退回本地的「最近播放」
+                    if session.isLoggedIn && !session.myPlaylists.isEmpty {
+                        myPlaylistsSection
+                    } else {
+                        recentlyPlayedSection
+                    }
                     madeForYouSection
                     radioSection
                     newReleasesSection
@@ -47,6 +54,11 @@ struct HomeView: View {
         }
         .sheet(item: $selectedPlaylist) { playlist in
             PlaylistDetailView(playlist: playlist)
+                .presentationBackground(.clear)
+        }
+        .sheet(item: $selectedNeteasePlaylist) { playlist in
+            NeteasePlaylistSheet(playlist: playlist)
+                .environment(player)
                 .presentationBackground(.clear)
         }
         .sheet(isPresented: $showsSearch) {
@@ -94,6 +106,64 @@ struct HomeView: View {
     }
 
     // MARK: - 最近播放
+
+    // MARK: - 我的歌单（网易云）
+
+    private var myPlaylistsSection: some View {
+        VStack(alignment: .leading, spacing: LiquidTheme.Spacing.sm) {
+            SectionHeader(
+                title: "我的歌单",
+                subtitle: "来自网易云 · \(session.account?.nickname ?? "")"
+            )
+            .padding(.horizontal, LiquidTheme.Spacing.screenH)
+
+            ScrollView(.horizontal) {
+                HStack(spacing: LiquidTheme.Spacing.sm) {
+                    ForEach(session.myPlaylists) { playlist in
+                        neteasePlaylistCard(playlist)
+                    }
+                }
+                .padding(.horizontal, LiquidTheme.Spacing.screenH)
+            }
+            .scrollIndicators(.hidden)
+        }
+    }
+
+    private func neteasePlaylistCard(_ playlist: NeteasePlaylist) -> some View {
+        Button {
+            selectedNeteasePlaylist = playlist
+        } label: {
+            VStack(alignment: .leading, spacing: LiquidTheme.Spacing.xs) {
+                AsyncImage(url: playlist.cover) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        FallbackArtwork(seed: playlist.name)
+                    }
+                }
+                .frame(width: 130, height: 130)
+                .clipShape(RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: LiquidTheme.Radius.tile, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(playlist.name)
+                        .font(LiquidTheme.Typography.caption.weight(.medium))
+                        .foregroundStyle(LiquidTheme.Palette.label)
+                        .lineLimit(1)
+                    Text("\(playlist.trackCount) 首")
+                        .font(LiquidTheme.Typography.caption)
+                        .foregroundStyle(LiquidTheme.Palette.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: 130, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 
     private var recentlyPlayedSection: some View {
         VStack(alignment: .leading, spacing: LiquidTheme.Spacing.sm) {

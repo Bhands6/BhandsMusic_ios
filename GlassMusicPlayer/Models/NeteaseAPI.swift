@@ -296,6 +296,51 @@ enum NeteaseAPI {
 
     // MARK: - 请求
 
+    /// 某个用户的歌单列表。看自己的（含私密）要带 cookie —— 由 `get` 自动附上。
+    static func userPlaylists(uid: Int, limit: Int = 100) async throws -> [NeteasePlaylist] {
+        let json = try await get("/user/playlist", ["uid": String(uid), "limit": String(limit)])
+        guard let items = json["playlist"] as? [[String: Any]] else { throw Failure.badResponse }
+
+        return items.compactMap { item in
+            guard let id = item["id"] as? Int, let name = item["name"] as? String else { return nil }
+            let cover = (item["coverImgUrl"] as? String)?
+                .replacingOccurrences(of: "http://", with: "https://")
+            return NeteasePlaylist(
+                id: id,
+                name: name,
+                cover: cover.flatMap { URL(string: $0) },
+                trackCount: item["trackCount"] as? Int ?? 0,
+                creator: (item["creator"] as? [String: Any])?["nickname"] as? String ?? ""
+            )
+        }
+    }
+
+    /// 歌单里的全部曲目。
+    static func playlistTracks(id: Int, limit: Int = 100) async throws -> [Track] {
+        let json = try await get("/playlist/track/all", ["id": String(id), "limit": String(limit)])
+        guard let songs = json["songs"] as? [[String: Any]] else { throw Failure.badResponse }
+
+        // 这个接口的字段是 `ar` / `al` / `dt`，和搜索的 `artists` / `album` / `duration` 不同
+        return songs.compactMap { item in
+            guard let sid = item["id"] as? Int, let name = item["name"] as? String else { return nil }
+            let artists = (item["ar"] as? [[String: Any]])?
+                .compactMap { $0["name"] as? String }
+                .joined(separator: " / ") ?? "未知艺人"
+            let album = item["al"] as? [String: Any]
+            let cover = (album?["picUrl"] as? String)?
+                .replacingOccurrences(of: "http://", with: "https://")
+
+            return Track(
+                id: sid,
+                title: name,
+                artist: artists,
+                album: album?["name"] as? String ?? "",
+                duration: Double(item["dt"] as? Int ?? 0) / 1000,
+                cover: cover.flatMap { URL(string: $0) }
+            )
+        }
+    }
+
     /// 给「我的」页这类需要自己拼请求的地方用。
     static func rawGet(_ path: String, _ query: [String: String]) async throws -> [String: Any] {
         try await get(path, query)

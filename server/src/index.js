@@ -189,6 +189,43 @@ app.get('/user/account', { preHandler: guard }, async (request, reply) => {
   }
 });
 
+// MARK: - 歌单
+
+/** 用户的歌单列表。`uid` 必填；看自己的（含私密）要带 cookie。 */
+app.get('/user/playlist', { preHandler: guard }, async (request, reply) => {
+  const { uid = '', limit = '100' } = request.query;
+  if (!uid) return reply.code(400).send({ error: 'bad_request', message: 'uid 不能为空' });
+  try {
+    return await cached('user_playlist', { uid, limit, cookie: request.query.cookie }, TTL.playlist, {
+      withCookie: true,
+    });
+  } catch (error) {
+    return upstreamError(reply, error);
+  }
+});
+
+/** 歌单详情（封面、标题、曲目数）。 */
+app.get('/playlist/detail', { preHandler: guard }, async (request, reply) => {
+  const { id = '' } = request.query;
+  if (!id) return reply.code(400).send({ error: 'bad_request', message: 'id 不能为空' });
+  try {
+    return await cached('playlist_detail', { id }, TTL.playlist);
+  } catch (error) {
+    return upstreamError(reply, error);
+  }
+});
+
+/** 歌单全部曲目。分页由 limit/offset 控制。 */
+app.get('/playlist/track/all', { preHandler: guard }, async (request, reply) => {
+  const { id = '', limit = '100', offset = '0' } = request.query;
+  if (!id) return reply.code(400).send({ error: 'bad_request', message: 'id 不能为空' });
+  try {
+    return await cached('playlist_track_all', { id, limit, offset }, TTL.playlist);
+  } catch (error) {
+    return upstreamError(reply, error);
+  }
+});
+
 // MARK: - 扫码登录
 
 app.get('/login/qr/key', { preHandler: guard }, async (request, reply) => {
