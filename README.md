@@ -424,6 +424,25 @@ cd api-enhanced && npm install && node app.js     # 默认 3000 端口
 `next()` 也不再 `% count` 绕回第一首，改成到末尾就停，返回 `Bool`。
 和 `previous()` 对称：第一首点上一曲、最后一首点下一曲，都弹提示而不是循环。
 
+### 实时活动（锁屏卡片 + 灵动岛）
+
+Widget Extension target `GlassMusicPlayerLiveActivity`，只承载一个 `ActivityConfiguration`。
+
+```
+Shared/PlaybackActivityAttributes.swift     ← 两个 target 都编（ActivityKit 靠类型名匹配）
+GlassMusicPlayerLiveActivity/               ← 扩展：锁屏卡片 + 灵动岛三态
+GlassMusicPlayer/Models/PlaybackActivityManager.swift   ← App 侧 start / update / end
+```
+
+- 一个活动对应一首歌，切歌就结束旧的、开新的（复用会让灵动岛残留上一首的动画）
+- `staleDate` 设 15 分钟，暂停后不会一直挂着
+- 进度条用 `ProgressView(timerInterval:)` 让系统自己走，不用每秒 update
+- 直播流不显示进度条，改显示 "LIVE"
+- `NSSupportsLiveActivities` 在 `Config/Info.plist`
+
+> ⚠️ 实时活动**不放播放按钮** —— 它跑在独立进程里，碰不到 App 的 AVPlayer。
+> 要做得走 AppIntent + 共享存储。播放控制在锁屏的「正在播放」卡片上。
+
 ### 纵向节奏
 
 | 层级 | 值 |

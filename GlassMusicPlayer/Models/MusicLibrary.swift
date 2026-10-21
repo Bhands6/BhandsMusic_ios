@@ -658,13 +658,30 @@ final class PlayerModel {
         queue[index].lyrics = lines
     }
 
-    private func syncNowPlaying() {        engine.updateNowPlaying(
-            title: current.title,
-            artist: current.artist,
-            artworkName: current.artworkName,
-            elapsed: progress * current.duration,
+    private func syncNowPlaying() {
+        let song = current
+        let elapsed = progress * song.duration
+
+        engine.updateNowPlaying(
+            title: song.title,
+            artist: song.artist,
+            artworkName: song.artworkName,
+            elapsed: elapsed,
             isPlaying: isPlaying
         )
+
+        // 实时活动（锁屏卡片 + 灵动岛）。和锁屏信息同源，一起更新。
+        // 管理器是 @MainActor 的，这里跳一下再调 —— 只是 fire-and-forget。
+        Task { @MainActor in
+            PlaybackActivityManager.shared.sync(
+                title: song.title,
+                artist: song.artist,
+                songKey: song.stableKey,
+                elapsed: elapsed,
+                duration: song.duration,
+                isPlaying: self.isPlaying
+            )
+        }
     }
 }
 
