@@ -414,8 +414,14 @@ final class PlayerModel {
 
     /// 真正的音频引擎。`@ObservationIgnored`：它不是 UI 状态，不需要被观察。
     @ObservationIgnored private let engine = AudioEngine()
-    /// 播放期间为 compact 音量条提供稳定的状态节拍。
+    /// 灵动岛动画的帧率来源：播放期间 0.25 秒推一帧。
     @ObservationIgnored private var liveActivityTicker: Timer?
+    /// 会话播放钟：本会话累计播放秒数（不含当前播放段）。
+    /// `playingSinceAnchor` = 当前播放段的开始时刻，nil = 暂停中。
+    /// 灵动岛的封面旋转 / 竖条相位只认这个钟 —— 切歌、拖进度条都不拨它，
+    /// 动画因此连续；只有播放 / 暂停会拨动。
+    @ObservationIgnored private var playClock: Double = 0
+    @ObservationIgnored private var playingSinceAnchor: Date?
 
     /// 连续多少首取不到播放地址。用于"失败就跳下一首"，跳 3 次还不行才停。
     @ObservationIgnored private var loadFailures = 0
@@ -453,12 +459,27 @@ final class PlayerModel {
             .deliverImmediately
         )
 
-        let ticker = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self, self.isPlaying else { return }
-            self.syncLiveActivity()
+        // 冷启动收掉上一次会话残留在锁屏上的实时活动卡片。
+        // 不能搭在第一次 sync 上 —— 会话开始前有门卫不推送（见 syncLiveActivity）。
+        Task { @MainActor in
+            PlaybackActivityManager.shared.cleanupOnLaunch()
         }
-        RunLoop.main.add(ticker, forMode: .common)
-        liveActivityTicker = ticker
+
+        // 灵动岛动画帧流：播放期间低频推送（默认 1 秒一帧，`-frameHz N` 覆盖）。
+        // 帧的作用是**重新瞄准**动画补间，不是逐帧驱动 —— Widget 侧把动画
+        // 目标瞄准「未来 N 秒」（封面和竖条都是 1s，与帧间隔一致），由系统补间持续插值，
+        // 帧率和动画速度无关；帧丢了上一次瞄准还在跑，相位也不会漂
+        // （相位真源是会话播放钟）。4Hz 高频会被系统把活动从岛撤下
+        // （2026-10 实测约 40 帧后），所以帧流必须低频。
+        let frameHz = DebugLaunch.frameHz
+        if frameHz > 0 {
+            let ticker = Timer(timeInterval: 1 / frameHz, repeats: true) { [weak self] _ in
+                guard let self, self.isPlaying else { return }
+                self.syncLiveActivity()
+            }
+            RunLoop.main.add(ticker, forMode: .common)
+            liveActivityTicker = ticker
+        }
 
         // 启动时只装载不自动播 —— 一打开 App 就出声太粗暴。
         loadCurrent(autoplay: false)
@@ -622,6 +643,8 @@ final class PlayerModel {
     func togglePlayPause() {
         isPlaying.toggle()
         if isPlaying {
+            // 预装载状态下直接点播放也算会话开始 —— 实时活动和曲库接管都认这个标记
+            hasStartedPlayback = true
             engine.play()
         } else {
             engine.pause()
@@ -715,20 +738,32 @@ final class PlayerModel {
     }
 
     /// 一曲自然播完。按循环模式决定重播 / 下一首 / 停下。
-    private func handleTrackFinished() {        switch repeatMode {
+    private func handleTrackFinished() {
+        switch repeatMode {
         case .one:
             seek(to: 0)
             engine.play()
             isPlaying = true
         case .all:
-            next()
+            // 循环模式到最后一首要绕回第一首 —— `next()` 故意不绕
+            // （手动「下一曲」到头就停），自然播完的绕回由这里负责。
+            // 不绕的话播放器会停在「isPlaying=true 但什么都没在播」的僵尸态，
+            // 灵动岛跟着一直假装播放中。
+            if !next() {
+                currentIndex = 0
+                loadCurrent(autoplay: true)
+            }
         case .off:
             if currentIndex < queue.count - 1 {
                 next()
             } else {
                 progress = 1
                 isPlaying = false
-                syncNowPlaying(includeLiveActivity: false)
+                // 先把「已暂停」的终态推给实时活动，再排 end —— 管理器里
+                // end 和更新走同一条串行管道，终态一定先落地。
+                // 不推的话留在锁屏上的是本曲开播时推的「正在播放」，
+                // 变成一张定格 15 分钟的幽灵卡。
+                syncNowPlaying()
                 Task { @MainActor in
                     PlaybackActivityManager.shared.end(
                         dismissalPolicy: .after(Date().addingTimeInterval(15 * 60))
@@ -793,10 +828,27 @@ final class PlayerModel {
 
     /// 把当前播放状态推给实时活动（锁屏卡片 + 灵动岛）。
     private func syncLiveActivity() {
+        // 会话开始前不建卡片 —— 启动时的「预装载」推送若不拦，
+        // 一打开 App 锁屏上就挂着一张从没播过的歌的「已暂停」卡片，
+        // 杀掉 App 后没人收，能一直挂到系统 8 小时上限。
+        guard hasStartedPlayback else { return }
+
+        // 会话播放钟只在播放/暂停的边沿拨动：开始/恢复 → 记锚点；
+        // 暂停 → 当前段并入累计。切歌、拖进度条都不碰它 ——
+        // 灵动岛的封面旋转 / 竖条相位因此不会中断或归零。
+        let now = Date()
+        if isPlaying, playingSinceAnchor == nil {
+            playingSinceAnchor = now
+        } else if !isPlaying, let anchor = playingSinceAnchor {
+            playClock += now.timeIntervalSince(anchor)
+            playingSinceAnchor = nil
+        }
+
         let song = current
         let elapsed = progress * song.duration
-        let capturedAt = Date()
         let capturedIsPlaying = isPlaying
+        let capturedPlayClock = playClock
+        let capturedPlayingSince = playingSinceAnchor
 
         // 管理器是 @MainActor 的，这里跳一下再调 —— 只是 fire-and-forget。
         Task { @MainActor in
@@ -808,7 +860,9 @@ final class PlayerModel {
                 elapsed: elapsed,
                 duration: song.duration,
                 isPlaying: capturedIsPlaying,
-                timestamp: capturedAt
+                timestamp: now,
+                playClock: capturedPlayClock,
+                playingSince: capturedPlayingSince
             )
         }
     }

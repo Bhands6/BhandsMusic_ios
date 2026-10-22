@@ -24,12 +24,23 @@ struct PlaybackActivityAttributes: ActivityAttributes {
         var artworkData: Data?
         /// 捕获 `elapsed` 的那一瞬间。
         ///
-        /// 只用于进度条和倒计时的锚点。
+        /// 平台约束（2026-10 逐帧截图实证）：实时活动只在收到内容更新时才
+        /// 重渲染，且本地 update 有隐形配额 —— 所以 App 侧**只做事件级推送**
+        /// （切歌 / 播放暂停 / 拖拽结束），会走的时间部件全部用系统自走视图
+        /// （`ProgressView(timerInterval:)` / `Text(timerInterval:)`）。
+        /// `(elapsed, timestamp)` 是它们的墙钟锚点：本曲开始 = timestamp − elapsed。
         var timestamp: Date
-        /// 只驱动 compact 音量条的本地补间，不代表音频采样数据。
-        var motionPhase: Double
-        /// 每次推送严格递增，作为 SwiftUI 补间的触发键。
-        var pushID: UInt64
+
+        /// 会话播放钟 —— 灵动岛动画（封面旋转 / 竖条）的唯一相位源。
+        ///
+        /// `playClock` = 本次播放段开始**之前**本会话累计播放的秒数；
+        /// `playingSince` = 当前播放段的开始时刻（nil = 暂停中）。
+        /// Widget 侧实时相位 = playClock + (now − playingSince)。
+        /// 刻意**不**锚定每首歌的播放位置 —— 那样切歌、拖进度条都会让
+        /// 旋转角度和竖条相位归零跳变。会话钟只有播放/暂停会拨动，
+        /// 「切歌不影响动画」就是这么来的。
+        var playClock: Double
+        var playingSince: Date?
 
         var isLive: Bool { duration <= 0 }
         var remaining: Double { max(duration - elapsed, 0) }

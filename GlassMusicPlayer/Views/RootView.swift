@@ -261,4 +261,18 @@ enum DebugLaunch {
         return false
         #endif
     }
+
+    /// `-frameHz N` 灵动岛动画帧流频率（默认 1；0 = 关闭，纯事件帧）。
+    ///
+    /// 帧的作用是**重新瞄准**动画补间（见 Widget 侧 aim-ahead 注释），
+    /// 不是逐帧驱动 —— 频率只影响瞄准密度，不影响动画速度。
+    /// 4Hz 会被系统把活动从灵动岛撤下（2026-10 实测），默认取 1。
+    static var frameHz: Double {
+        #if DEBUG
+        let value = UserDefaults.standard.double(forKey: "frameHz")
+        return value > 0 ? value : 1
+        #else
+        return 1
+        #endif
+    }
 }

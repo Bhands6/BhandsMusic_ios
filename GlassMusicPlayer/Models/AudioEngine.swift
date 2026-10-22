@@ -25,6 +25,18 @@ final class AudioEngine {
     /// 真实时长。0 表示直播流 —— 锁屏按 live stream 展示，不显示进度。
     private var realDuration: Double = 0
 
+    /// 调试：`-noNowPlaying 1` 跳过系统媒体注册（MPNowPlayingInfoCenter /
+    /// MPRemoteCommandCenter）。用来实验「不注册 Now Playing 时，系统媒体岛
+    /// 是否不再抢占灵动岛槽位」。关掉后锁屏/控制中心/耳机的系统集成消失，
+    /// 但我们的实时活动锁屏卡片（带播放按钮）仍在。
+    private let registersNowPlaying: Bool = {
+        #if DEBUG
+        return !UserDefaults.standard.bool(forKey: "noNowPlaying")
+        #else
+        return true
+        #endif
+    }()
+
     /// 进度回调（0...1），主队列
     var onProgress: ((Double) -> Void)?
     /// 一曲自然播完，主队列
@@ -39,7 +51,9 @@ final class AudioEngine {
     init() {
         configureSession()
         addTimeObserver()
-        configureRemoteCommands()
+        if registersNowPlaying {
+            configureRemoteCommands()
+        }
     }
 
     // MARK: - 会话
@@ -142,6 +156,7 @@ final class AudioEngine {
         elapsed: Double,
         isPlaying: Bool
     ) {
+        guard registersNowPlaying else { return }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyArtist: artist

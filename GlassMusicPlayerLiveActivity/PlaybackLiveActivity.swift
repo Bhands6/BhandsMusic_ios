@@ -4,6 +4,25 @@ import SwiftUI
 import UIKit
 import WidgetKit
 
+/// 会话播放钟的实时值：累计段 + 当前播放段（按渲染时刻墙钟推进）。
+/// 灵动岛动画（封面旋转 / 竖条）的唯一相位源 —— 刻意不锚定每首歌的
+/// 播放位置，切歌、拖进度条都不会让它归零跳变。
+extension PlaybackActivityAttributes.ContentState {
+    var livePlaytime: Double {
+        playClock + (playingSince.map { max(0, Date().timeIntervalSince($0)) } ?? 0)
+    }
+}
+
+/// 补间窗口：动画目标瞄准「未来 N 秒」、补间时长同为 N —— 系统在两帧快照之间
+/// 按此时长线性插值，N 与帧间隔一致时严格匀速（角度是时间的线性函数，
+/// 1Hz 关键帧 + 1s 线性补间 = 完美匀速旋转；帧丢了相位也不漂，
+/// 相位真源是会话播放钟）。
+/// ⚠️ N 不能远大于帧间隔：曾用 3600s 给封面「零帧需求」，结果两帧间
+/// 72° 的角度差被摊到 3600s 里（或被系统钳制时长），旋转变成卡顿。
+/// 暂停帧：目标 = 当前位置且不补间 → 立即定格。
+private let coverTweenWindow: Double = 1
+private let barTweenWindow: Double = 1
+
 struct PlaybackLiveActivity: Widget {
     private let deepLink = URL(string: "bhandsmusic://nowplaying")
 
@@ -16,7 +35,13 @@ struct PlaybackLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
+                    let angle = (context.state.livePlaytime + coverTweenWindow) * 72
                     CoverArt(state: context.state, diameter: 40, cornerRadius: 10)
+                        .rotationEffect(.degrees(angle))
+                        .animation(
+                            context.state.isPlaying ? .linear(duration: coverTweenWindow) : nil,
+                            value: angle
+                        )
                         .accessibilityHidden(true)
                 }
 
@@ -39,7 +64,13 @@ struct PlaybackLiveActivity: Widget {
                     .padding(.top, 2)
                 }
             } compactLeading: {
+                let angle = (context.state.livePlaytime + coverTweenWindow) * 72
                 CoverArt(state: context.state, diameter: 30)
+                    .rotationEffect(.degrees(angle))
+                    .animation(
+                        context.state.isPlaying ? .linear(duration: coverTweenWindow) : nil,
+                        value: angle
+                    )
                     .accessibilityHidden(true)
             } compactTrailing: {
                 CompactPlaybackStatus(state: context.state)
@@ -52,9 +83,15 @@ struct PlaybackLiveActivity: Widget {
     }
 
     private func lockScreenCard(_ state: PlaybackActivityAttributes.ContentState) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let angle = (state.livePlaytime + coverTweenWindow) * 72
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 CoverArt(state: state, diameter: 48, cornerRadius: 12)
+                    .rotationEffect(.degrees(angle))
+                    .animation(
+                        state.isPlaying ? .linear(duration: coverTweenWindow) : nil,
+                        value: angle
+                    )
                     .accessibilityHidden(true)
 
                 TrackMetadata(state: state, showsArtist: true, light: true)
@@ -146,39 +183,28 @@ private struct PlaybackStateIcon: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Color(red: 0.95, green: 0.28, blue: 0.35))
             } else {
-                // 竖条的运动**只靠本地墙钟**，不再依赖 App 推送的 motionPhase。
-                // 进度条（timerInterval）和倒计时（TimelineView）本来就是本地自走，
-                // 竖条是唯一绑在推送链上的动效 —— 推送一停（杀进程、后台挂起、
-                // 更新被系统静默丢弃）整条岛就冻住，别的部件还在动，特别露馅。
-                // 相位锚定最后一次推送捕获的播放位置（elapsed @ timestamp），
-                // 与进度条同一时间基，推送断了节奏也不抢拍。
-                TimelineView(.periodic(from: .now, by: 0.25)) { context in
-                    let phase = Self.phase(
-                        at: context.date,
-                        elapsed: state.elapsed,
-                        anchor: state.timestamp
-                    )
-                    HStack(alignment: .center, spacing: 2) {
-                        ForEach(0..<3, id: \.self) { index in
-                            Capsule()
-                                .fill(Color(red: 0.95, green: 0.28, blue: 0.35))
-                                .frame(width: 2.5, height: barHeight(at: index, phase: phase))
-                        }
+                // 竖条相位 = 会话播放钟 × 3.1 rad/s（≈2 秒一个起伏周期）。
+                // aim-ahead：目标瞄准未来 1 秒的相位、补间 1 秒 —— 恒速起伏，
+                // 与帧率无关；App 侧 1Hz 帧流负责持续重瞄准。
+                // 相位真源是会话钟 —— 切歌、拖进度条都不打断起伏。
+                // 暂停帧目标 = 当前相位且不补间 → 立即定格。
+                let phase = (state.livePlaytime + barTweenWindow) * 3.1
+                HStack(alignment: .center, spacing: 2) {
+                    ForEach(0..<5, id: \.self) { index in
+                        Capsule()
+                            .fill(Color(red: 0.95, green: 0.28, blue: 0.35))
+                            .frame(width: 2.5, height: barHeight(at: index, phase: phase))
                     }
-                    .frame(width: 16, height: 20)
-                    .animation(.linear(duration: 0.25), value: phase)
                 }
+                .frame(height: 20)
+                .animation(
+                    state.isPlaying ? .linear(duration: barTweenWindow) : nil,
+                    value: phase
+                )
             }
         }
-        .frame(width: 18, height: 20)
+        .frame(height: 20)
         .accessibilityHidden(true)
-    }
-
-    /// 墙钟 → 动画相位（弧度）。3.1 rad/s ≈ 2s 一个完整起伏周期，
-    /// 和旧版按推送间隔累加 motionPhase 的节奏一致。
-    static func phase(at date: Date, elapsed: Double, anchor: Date) -> Double {
-        let played = elapsed + max(0, date.timeIntervalSince(anchor))
-        return played * 3.1
     }
 
     private func barHeight(at index: Int, phase: Double) -> CGFloat {
@@ -204,12 +230,15 @@ private struct RemainingLabel: View {
                     .font(labelFont)
                     .foregroundStyle(.purple)
             } else if state.isPlaying {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(durationText(max(state.remaining - context.date.timeIntervalSince(state.timestamp), 0)))
-                        .font(labelFont)
-                        .monospacedDigit()
-                        .foregroundStyle(labelColor)
-                }
+                // 倒计时按渲染时刻的墙钟从 (remaining, timestamp) 锚点算 ——
+                // App 侧 1Hz 帧流每秒渲染一帧，走字靠帧。
+                // ⚠️ 勿改回 Text(timerInterval:)：在 iOS 26 上会让渲染器
+                // 崩溃（GeometryReaderLayout 布局断言，崩溃报告实锤），
+                // 崩溃后岛只显示系统占位灰图标。
+                Text(durationText(max(state.remaining - Date().timeIntervalSince(state.timestamp), 0)))
+                    .font(labelFont)
+                    .monospacedDigit()
+                    .foregroundStyle(labelColor)
             } else {
                 Text(durationText(state.remaining))
                     .font(labelFont)
