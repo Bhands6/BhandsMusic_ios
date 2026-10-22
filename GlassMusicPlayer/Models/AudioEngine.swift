@@ -17,6 +17,9 @@ final class AudioEngine {
     private let player = AVPlayer()
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
+    private var failObserver: NSObjectProtocol?
+    /// 当前播放项的 status 观察（用来接住"地址拿到了但放不出来"）
+    private var itemObservation: NSKeyValueObservation?
     /// 用于进度换算的分母（0 时长会被抬到 1，避免除零）
     private var duration: Double = 1
     /// 真实时长。0 表示直播流 —— 锁屏按 live stream 展示，不显示进度。
@@ -26,6 +29,8 @@ final class AudioEngine {
     var onProgress: ((Double) -> Void)?
     /// 一曲自然播完，主队列
     var onFinish: (() -> Void)?
+    /// 播放项加载/播放失败（地址拿到了但放不出来），主队列
+    var onLoadFailure: (() -> Void)?
     /// 远程控制（耳机 / 锁屏）触发的播放状态变化
     var onRemoteToggle: (() -> Void)?
     var onRemoteNext: (() -> Void)?
@@ -34,7 +39,6 @@ final class AudioEngine {
     init() {
         configureSession()
         addTimeObserver()
-        observeFinish()
         configureRemoteCommands()
     }
 
@@ -54,9 +58,48 @@ final class AudioEngine {
     func load(url: URL, duration: Double, autoplay: Bool) {
         realDuration = duration
         self.duration = max(duration, 1)
-        player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        let item = AVPlayerItem(url: url)
+        observeItem(item)
+        player.replaceCurrentItem(with: item)
         player.seek(to: .zero)
         if autoplay { play() }
+    }
+
+    /// 盯住播放项的 status。
+    ///
+    /// **`.failed` 必须有人接**：网易云的地址可能拿到了却放不出来
+    /// （403 / 过期 / 版权拦截 / 解码失败）。没人接的话播放器会停在
+    /// "什么都没在播、但 isPlaying 还是 true"的僵尸态 —— 进度冻结、
+    /// 推送逐字节相同，灵动岛封面看起来就是"冻住了"。
+    private func observeItem(_ item: AVPlayerItem) {
+        itemObservation?.invalidate()
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        if let failObserver { NotificationCenter.default.removeObserver(failObserver) }
+
+        itemObservation = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
+            guard let self, observedItem.status == .failed, self.player.currentItem === observedItem else { return }
+            DispatchQueue.main.async {
+                self.onLoadFailure?()
+            }
+        }
+
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self, weak item] _ in
+            guard let self, let item, self.player.currentItem === item else { return }
+            self.onFinish?()
+        }
+
+        failObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self, weak item] _ in
+            guard let self, let item, self.player.currentItem === item else { return }
+            self.onLoadFailure?()
+        }
     }
 
     func play() {
@@ -86,16 +129,6 @@ final class AudioEngine {
             guard seconds.isFinite else { return }
             let value = min(max(seconds / self.duration, 0), 1)
             self.onProgress?(value)
-        }
-    }
-
-    private func observeFinish() {
-        endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.onFinish?()
         }
     }
 
@@ -183,5 +216,7 @@ final class AudioEngine {
     deinit {
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        if let failObserver { NotificationCenter.default.removeObserver(failObserver) }
+        itemObservation?.invalidate()
     }
 }

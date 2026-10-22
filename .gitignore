@@ -21,3 +21,6 @@ build/
 server/node_modules/
 server/.env
 server/npm-debug.log*
+
+# WorkBuddy AI 项目数据（本地记忆/日志，非工程文件）
+.workbuddy-ai/

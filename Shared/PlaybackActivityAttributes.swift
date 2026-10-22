@@ -18,11 +18,24 @@ struct PlaybackActivityAttributes: ActivityAttributes {
         var elapsed: Double
         /// 总时长。直播流是 0
         var duration: Double
+        /// 封面（JPEG 数据，App 侧已缩到 48px 并压到 1800 字节以内）。
+        /// Widget 扩展没有网络权限也拿不到 App 的图片缓存，只能随状态塞进来。
+        /// nil 时 Widget 画渐变兜底。
+        var artworkData: Data?
+        /// 捕获 `elapsed` 的那一瞬间。
+        ///
+        /// 只用于进度条和倒计时的锚点。
+        var timestamp: Date
+        /// 只驱动 compact 音量条的本地补间，不代表音频采样数据。
+        var motionPhase: Double
+        /// 每次推送严格递增，作为 SwiftUI 补间的触发键。
+        var pushID: UInt64
 
         var isLive: Bool { duration <= 0 }
+        var remaining: Double { max(duration - elapsed, 0) }
     }
 
-    /// 一首歌对应一个活动。切歌时结束旧的、开新的 ——
-    /// 比复用同一个活动再改内容简单，灵动岛也不会残留上一首的动画。
-    var songKey: String
+    /// 这里**不再放 songKey** —— 一个活动贯穿整个播放会话，
+    /// 按歌变化的身份信息没有意义（按歌建活动会踩后台不能 request 的坑）。
+    /// 属性留空即可，所有会变的东西都在 `ContentState` 里。
 }

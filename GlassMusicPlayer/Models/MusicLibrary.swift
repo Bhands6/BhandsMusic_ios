@@ -1,5 +1,14 @@
 import SwiftUI
 import Observation
+import Darwin
+
+private let playbackCommandCallback: CFNotificationCallback = { _, observer, _, _, _ in
+    guard let observer else { return }
+    let player = Unmanaged<PlayerModel>.fromOpaque(observer).takeUnretainedValue()
+    DispatchQueue.main.async {
+        player.togglePlayPause()
+    }
+}
 
 // MARK: - 歌词
 
@@ -405,6 +414,12 @@ final class PlayerModel {
 
     /// 真正的音频引擎。`@ObservationIgnored`：它不是 UI 状态，不需要被观察。
     @ObservationIgnored private let engine = AudioEngine()
+    /// 播放期间为 compact 音量条提供稳定的状态节拍。
+    @ObservationIgnored private var liveActivityTicker: Timer?
+
+    /// 连续多少首取不到播放地址。用于"失败就跳下一首"，跳 3 次还不行才停。
+    @ObservationIgnored private var loadFailures = 0
+    @ObservationIgnored private var scheduledDebugFastFinish = false
 
     init() {
         engine.onProgress = { [weak self] value in
@@ -424,17 +439,41 @@ final class PlayerModel {
         engine.onRemotePrevious = { [weak self] in
             _ = self?.previous()
         }
+        engine.onLoadFailure = { [weak self] in
+            self?.handleLoadFailure()
+        }
+
+        let observer = Unmanaged.passUnretained(self).toOpaque()
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            observer,
+            playbackCommandCallback,
+            PlaybackCommand.togglePlayback as CFString,
+            nil,
+            .deliverImmediately
+        )
+
+        let ticker = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self, self.isPlaying else { return }
+            self.syncLiveActivity()
+        }
+        RunLoop.main.add(ticker, forMode: .common)
+        liveActivityTicker = ticker
 
         // 启动时只装载不自动播 —— 一打开 App 就出声太粗暴。
-        // （之前有个 -autoplay 的调试开关能强制出声，已移除：
-        //  它会让人分不清"是不是 App 自己在播"。）
         loadCurrent(autoplay: false)
+
+        // -autoplay 1 启动即播（诊断用临时开关，测完删）
+        if DebugLaunch.autoplay {
+            play(current)
+        }
 
         // -radio N 直接进某个网络电台，验证直播流
         if DebugLaunch.radioIndex > 0 {
             let index = min(DebugLaunch.radioIndex - 1, RadioCatalog.stations.count - 1)
             play(RadioCatalog.song(for: RadioCatalog.stations[index]), in: RadioCatalog.songs)
         }
+
     }
 
     var current: Song {
@@ -473,10 +512,15 @@ final class PlayerModel {
     /// 启动时队列里是打包音轨（保证离线可用），但用户还没播过 ——
     /// 这时候换成真实曲库更合理。已经播过就别动，否则正在听的歌会被打断。
     func adoptLibrary(_ songs: [Song]) {
-        guard !hasStartedPlayback, !songs.isEmpty else { return }
+        guard !songs.isEmpty else { return }
+        // 调试：`-autoplay 1` 时允许用远程曲库接管（复现真实播放场景）
+        guard !hasStartedPlayback || DebugLaunch.autoplay else { return }
+        // 调试：保持打包音轨，实时活动测试要可控、不依赖网络
+        guard !DebugLaunch.localOnly else { return }
         queue = songs
         currentIndex = 0
-        loadCurrent(autoplay: false)
+        // `-autoplay 1` 调试开关：曲库接管队列后继续播，否则测试时一加载完就停住了
+        loadCurrent(autoplay: DebugLaunch.autoplay)
     }
 
     /// 清空队列，只留下正在播的这一首。    ///
@@ -589,7 +633,9 @@ final class PlayerModel {
         let clamped = min(max(value, 0), 1)
         progress = clamped
         engine.seek(to: clamped * current.duration)
-        syncNowPlaying()
+        if !isSeeking {
+            syncNowPlaying()
+        }
     }
 
     /// 装载当前曲目。`autoplay` 决定装载后是否立刻出声。
@@ -602,16 +648,34 @@ final class PlayerModel {
         // 网易云：先异步取播放地址，取到再装载
         if case .netease(let id) = current.source {
             let requested = current
-            isPlaying = false
+
+            // 取播放地址要几百毫秒到一两秒。先乐观地推一版新歌状态，
+            // 让标题、封面和播放状态不要停在上一首，地址回来后再修正。
+            isPlaying = autoplay
+            syncNowPlaying()
 
             Task { @MainActor in
-                guard let url = try? await NeteaseAPI.streamURL(for: id) else { return }
+                guard let url = try? await NeteaseAPI.streamURL(for: id) else {
+                    guard self.current.id == requested.id else { return }
+                    // 取不到播放地址（VIP / 版权 / 接口抖动）：自动跳下一首，
+                    // 而不是停在这一首 —— 用户看到的是"放着放着不动了"。
+                    // 连续失败超过 3 首才真的停下来，避免整张歌单都不可用时疯狂跳。
+                    self.loadFailures += 1
+                    #if DEBUG
+                    PlaybackActivityManager.probe("streamURL 失败 song=\(requested.title) loadFailures=\(self.loadFailures)")
+                    #endif
+                    if self.loadFailures <= 3, self.next() { return }
+                    self.stopAfterFailures()
+                    return
+                }
                 // 解析期间用户可能已经切歌了
                 guard self.current.id == requested.id else { return }
 
                 self.engine.load(url: url, duration: requested.duration, autoplay: autoplay)
                 self.isPlaying = autoplay
+                self.loadFailures = 0
                 self.syncNowPlaying()
+                self.scheduleDebugFastFinish()
 
                 // 歌词单独拉，失败不影响播放
                 if requested.lyrics.isEmpty,
@@ -629,12 +693,29 @@ final class PlayerModel {
             return
         }
         engine.load(url: url, duration: current.duration, autoplay: autoplay)
+        loadFailures = 0
         syncNowPlaying()
+        scheduleDebugFastFinish()
+    }
+
+    /// 调试用：`-finishAfter N` —— N 秒后把进度跳到结尾前 4 秒，
+    /// 让「一曲自然播完 → 自动下一首」这条路径几秒内就能走一遍。
+    /// 只挪进度，播完后的处理逻辑完全走真实代码。
+    private func scheduleDebugFastFinish() {
+        guard let delay = DebugLaunch.finishAfter else { return }
+        guard !scheduledDebugFastFinish else { return }
+        scheduledDebugFastFinish = true
+        let seconds = current.duration
+        guard !current.isLive, seconds > 8 else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(delay))
+            guard self.current.duration == seconds, self.isPlaying else { return }
+            self.seek(to: (seconds - 4) / seconds)
+        }
     }
 
     /// 一曲自然播完。按循环模式决定重播 / 下一首 / 停下。
-    private func handleTrackFinished() {
-        switch repeatMode {
+    private func handleTrackFinished() {        switch repeatMode {
         case .one:
             seek(to: 0)
             engine.play()
@@ -647,8 +728,43 @@ final class PlayerModel {
             } else {
                 progress = 1
                 isPlaying = false
+                syncNowPlaying(includeLiveActivity: false)
+                Task { @MainActor in
+                    PlaybackActivityManager.shared.end(
+                        dismissalPolicy: .after(Date().addingTimeInterval(15 * 60))
+                    )
+                }
             }
         }
+    }
+
+    /// 连续加载失败后真的停下来。
+    ///
+    /// ⚠️ 除了置 `isPlaying = false`，还必须 `engine.pause()` ——
+    /// 点歌失败时引擎里可能还是上一首的 item、它还在出声，
+    /// 只改状态会造成"歌还在放、灵动岛却冻住"的僵尸态。
+    private func stopAfterFailures() {
+        isPlaying = false
+        engine.pause()
+        syncNowPlaying(includeLiveActivity: false)
+        Task { @MainActor in
+            PlaybackActivityManager.shared.end()
+        }
+    }
+
+    /// 播放项加载失败 —— URL 拿到了但放不出来（403 / 过期 / 解码失败）。
+    ///
+    /// 这条路径之前完全没有处理：播放器停在"isPlaying=true 但什么都没在播"，
+    /// 进度和状态会全部冻结，界面停留在不可播放的僵尸态。
+    /// 这条路径必须主动切歌或停止，不能继续保留播放状态。
+    /// 现在按"加载失败"走同一条自动跳下一首的路（超过 3 首就停）。
+    private func handleLoadFailure() {
+        #if DEBUG
+        PlaybackActivityManager.probe("播放项失败 song=\(current.title) loadFailures=\(loadFailures)")
+        #endif
+        loadFailures += 1
+        if loadFailures <= 3, next() { return }
+        stopAfterFailures()
     }
 
     /// 把拉到的歌词写回队列里的那一首。
@@ -658,7 +774,7 @@ final class PlayerModel {
         queue[index].lyrics = lines
     }
 
-    private func syncNowPlaying() {
+    private func syncNowPlaying(includeLiveActivity: Bool = true) {
         let song = current
         let elapsed = progress * song.duration
 
@@ -670,19 +786,48 @@ final class PlayerModel {
             isPlaying: isPlaying
         )
 
-        // 实时活动（锁屏卡片 + 灵动岛）。和锁屏信息同源，一起更新。
+        if includeLiveActivity {
+            syncLiveActivity()
+        }
+    }
+
+    /// 把当前播放状态推给实时活动（锁屏卡片 + 灵动岛）。
+    private func syncLiveActivity() {
+        let song = current
+        let elapsed = progress * song.duration
+        let capturedAt = Date()
+        let capturedIsPlaying = isPlaying
+
         // 管理器是 @MainActor 的，这里跳一下再调 —— 只是 fire-and-forget。
         Task { @MainActor in
             PlaybackActivityManager.shared.sync(
                 title: song.title,
                 artist: song.artist,
                 songKey: song.stableKey,
+                artworkName: song.artworkName,
                 elapsed: elapsed,
                 duration: song.duration,
-                isPlaying: self.isPlaying
+                isPlaying: capturedIsPlaying,
+                timestamp: capturedAt
             )
         }
     }
+
+    /// 设置页重新启用实时活动时，立即用当前播放状态补一版内容。
+    func refreshPresentation() {
+        syncNowPlaying()
+    }
+
+    deinit {
+        liveActivityTicker?.invalidate()
+        CFNotificationCenterRemoveObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            CFNotificationName(PlaybackCommand.togglePlayback as CFString),
+            nil
+        )
+    }
+
 }
 
 // MARK: - 颜色工具

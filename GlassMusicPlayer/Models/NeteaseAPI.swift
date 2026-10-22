@@ -4,7 +4,7 @@ import Foundation
 ///
 /// 部署到服务器后，在「我的 → 服务器」里填地址，不用改代码重新编译。
 enum ServerSettings {
-    static let defaultURL = "http://localhost:3456"
+    static let defaultURL = "http://localhost:3000"
 
     static var baseURLString: String {
         get { UserDefaults.standard.string(forKey: "ncmBaseURL") ?? defaultURL }
@@ -257,22 +257,30 @@ enum NeteaseAPI {
     }
 
     /// 把搜索/推荐接口里的单条曲目映射成 `Track`。
+    ///
+    /// 网易云两套字段并存：搜索/newsong 是 `artists` / `album` / `duration`，
+    /// 每日推荐（dailySongs）是 `ar` / `al` / `dt` —— 两套都要认，
+    /// 否则每日推荐整页艺人都是「未知艺人」。
     private static func track(from item: [String: Any]) -> Track? {
         guard let id = item["id"] as? Int, let name = item["name"] as? String else { return nil }
 
-        let artists = (item["artists"] as? [[String: Any]])?
+        let people = (item["artists"] as? [[String: Any]]) ?? (item["ar"] as? [[String: Any]])
+        let joined = people?
             .compactMap { $0["name"] as? String }
-            .joined(separator: " / ") ?? "未知艺人"
+            .joined(separator: " / ") ?? ""
+        let artists = joined.isEmpty ? "未知艺人" : joined
 
-        let album = item["album"] as? [String: Any]
+        let album = (item["album"] as? [String: Any]) ?? (item["al"] as? [String: Any])
         let ms = item["duration"] as? Double ?? Double(item["dt"] as? Int ?? 0)
+        let pic = album?["picUrl"] as? String
 
         return Track(
             id: id,
             title: name,
             artist: artists,
             album: album?["name"] as? String ?? "",
-            duration: ms / 1000
+            duration: ms / 1000,
+            cover: pic.flatMap { URL(string: $0.replacingOccurrences(of: "http://", with: "https://")) }
         )
     }
 

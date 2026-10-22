@@ -83,6 +83,7 @@ struct ProfileDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(NeteaseSession.self) private var session
     @Environment(LibraryStore.self) private var library
+    @Environment(PlaylistStore.self) private var playlists
     @State private var quality = AudioQuality.current
     @State private var serverURL = ServerSettings.baseURLString
     @State private var apiKey = ServerSettings.apiKey
@@ -165,7 +166,15 @@ struct ProfileDetailSheet: View {
                 Button {
                     ServerSettings.baseURLString = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
                     ServerSettings.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-                    Task { await probe() }
+                    Task {
+                        // 探活通过才算真接上了后端，这时把数据全部重拉 ——
+                        // 否则 PlaylistStore 的 loadAll 闩锁已消费（只试一次），
+                        // 「为你推荐」会一直停在旧地址拉到的/兜底的旧内容上。
+                        if await probe() {
+                            await playlists.reload()
+                            await session.loadMyPlaylists()
+                        }
+                    }
                 } label: {
                     Text("保存并测试")
                         .font(LiquidTheme.Typography.button)
@@ -228,13 +237,13 @@ struct ProfileDetailSheet: View {
     }
 
     /// 打一次 `/healthz`。这个接口不需要鉴权，专门用来探活。
-    private func probe() async {
+    /// - Returns: 服务可用（且密钥齐备）时返回 `true`，调用方据此决定要不要重拉数据。
+    private func probe() async -> Bool {
         probeState = .testing
-        defer { }
 
         guard let base = URL(string: ServerSettings.baseURLString) else {
             probeState = .failed("地址格式不对")
-            return
+            return false
         }
 
         var request = URLRequest(url: base.appendingPathComponent("healthz"))
@@ -244,17 +253,19 @@ struct ProfileDetailSheet: View {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 probeState = .failed("服务返回 \((response as? HTTPURLResponse)?.statusCode ?? -1)")
-                return
+                return false
             }
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             let needsKey = json?["authRequired"] as? Bool ?? false
             if needsKey && ServerSettings.apiKey.isEmpty {
                 probeState = .failed("服务已开鉴权，请填写密钥")
-            } else {
-                probeState = .ok
+                return false
             }
+            probeState = .ok
+            return true
         } catch {
             probeState = .failed("连不上：\(error.localizedDescription)")
+            return false
         }
     }
 

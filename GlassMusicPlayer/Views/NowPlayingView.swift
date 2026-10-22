@@ -46,6 +46,9 @@ struct NowPlayingView: View {
                     ) { editing in
                         isScrubbing = editing
                         player.isSeeking = editing
+                        if !editing {
+                            player.refreshPresentation()
+                        }
                     }
                     .padding(.top, LiquidTheme.Spacing.md)
 

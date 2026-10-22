@@ -434,14 +434,16 @@ GlassMusicPlayerLiveActivity/               ← 扩展：锁屏卡片 + 灵动�
 GlassMusicPlayer/Models/PlaybackActivityManager.swift   ← App 侧 start / update / end
 ```
 
-- 一个活动对应一首歌，切歌就结束旧的、开新的（复用会让灵动岛残留上一首的动画）
-- `staleDate` 设 15 分钟，暂停后不会一直挂着
-- 进度条用 `ProgressView(timerInterval:)` 让系统自己走，不用每秒 update
-- 直播流不显示进度条，改显示 "LIVE"
-- `NSSupportsLiveActivities` 在 `Config/Info.plist`
-
-> ⚠️ 实时活动**不放播放按钮** —— 它跑在独立进程里，碰不到 App 的 AVPlayer。
-> 要做得走 AppIntent + 共享存储。播放控制在锁屏的「正在播放」卡片上。
+- 一个活动贯穿整个播放会话，切歌只 `update`，避免后台无法重新 `request`
+- compact 显示封面和播放状态/剩余时间，minimal 显示封面和播放状态
+- expanded 与锁屏共用曲名、艺人、剩余时间和进度层级
+- 播放/暂停按钮使用 `LiveActivityIntent`，通过 Darwin 通知交给主 App 的 AVPlayer
+- 进度条用 `ProgressView(timerInterval:)`；暂停时切换为静态进度
+- 直播流显示 "LIVE"，不显示虚假的连续进度
+- 播放期间以 0.25 秒状态节拍驱动 compact 音量条补间；暂停时不再推送
+- 暂停或开启“减弱动态效果”时，音量条立即静止
+- 队列播完会结束活动；用户主动关闭后，本次播放会话不再自动重建
+- 「我的 → 播放与音质」提供实时活动开关
 
 ### 纵向节奏
 
@@ -579,4 +581,4 @@ xcrun simctl launch booted com.example.GlassMusicPlayer -tab 0 -scrollBottom 1  
 ## 八、已知边界
 
 - 当前锁定**浅色外观**。深色外观下语义色会自动反相，但玻璃的 tint 与压暗层级需要单独调一遍才能达标。
-- 播放是**静态演示**：进度不会自动走，切歌不发声。
+- 网易云非官方接口仅适合个人学习，不能用于上架发行。

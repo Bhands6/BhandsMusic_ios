@@ -68,6 +68,17 @@ struct RootView: View {
                 .environment(player)
                 .presentationBackground(.clear)
         }
+        .onOpenURL { url in
+            guard url.scheme == "bhandsmusic" else { return }
+            switch url.host {
+            case "nowplaying":
+                showsNowPlaying = true
+            case "togglePlayback":
+                player.togglePlayPause()
+            default:
+                break
+            }
+        }
         .task {
             if DebugLaunch.showsToast {
                 // 截图用：给足时间，避免还没拍到就淡出了
@@ -191,6 +202,15 @@ enum DebugLaunch {
         #endif
     }
 
+    /// `-autoplay 1` 启动即开始播放（诊断用临时开关，测完删）。
+    static var autoplay: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "autoplay")
+        #else
+        return false
+        #endif
+    }
+
     /// `-lyrics 1` 启动即展开歌词视图，用来截图验证歌词解析。
     static var opensLyrics: Bool {
         #if DEBUG
@@ -212,6 +232,31 @@ enum DebugLaunch {
     static func flag(_ key: String) -> Bool {
         #if DEBUG
         return UserDefaults.standard.bool(forKey: key)
+        #else
+        return false
+        #endif
+    }
+
+    /// `-finishAfter N` 装载后 N 秒把进度跳到结尾前 4 秒，几秒后自然播完。
+    ///
+    /// 实时活动"切歌即消失"这类问题必须在**一曲自然播完**的路径上复现，
+    /// 否则得干等三分钟。这个开关只挪进度，不改变播完后的处理逻辑。
+    static var finishAfter: Double? {
+        #if DEBUG
+        let value = UserDefaults.standard.double(forKey: "finishAfter")
+        return value > 0 ? value : nil
+        #else
+        return nil
+        #endif
+    }
+
+    /// `-localOnly 1` 不采用远程曲库，保持打包音轨。
+    ///
+    /// 实时活动的旋转 / 跳动要连拍量化，前提是播放稳定、不依赖网络 ——
+    /// 远程曲目取流地址慢或失败会让测试直接停在暂停态。
+    static var localOnly: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "localOnly")
         #else
         return false
         #endif

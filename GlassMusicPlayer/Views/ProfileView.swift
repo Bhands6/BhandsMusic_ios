@@ -18,6 +18,8 @@ struct ProfileView: View {
     /// 之前账户卡设了 `sheet = .detail(.account)`，弹出的却是后挂的登录二维码。
     @State private var sheet: ProfileSheet?
     @State private var showsLogoutConfirm = false
+    @AppStorage(PlaybackActivitySettings.enabledKey)
+    private var liveActivityEnabled = true
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -93,6 +95,22 @@ struct ProfileView: View {
                     guard !Task.isCancelled else { return }
                     if player.isPlaying { player.togglePlayPause() }
                     sleepTask = nil
+                }
+            }
+        )
+    }
+
+    private var liveActivityBinding: Binding<Bool> {
+        Binding(
+            get: { liveActivityEnabled },
+            set: { enabled in
+                liveActivityEnabled = enabled
+                if enabled {
+                    player.refreshPresentation()
+                } else {
+                    Task { @MainActor in
+                        PlaybackActivityManager.shared.end()
+                    }
                 }
             }
         )
@@ -258,6 +276,16 @@ struct ProfileView: View {
                     title: "睡眠定时",
                     subtitle: sleepTimerOn ? "30 分钟后停止播放" : "关闭",
                     isOn: sleepBinding
+                )
+
+                rowDivider
+
+                toggleRow(
+                    icon: "bolt.circle.fill",
+                    tint: Color(hex: 0xE84393),
+                    title: "实时活动",
+                    subtitle: "锁屏卡片与灵动岛",
+                    isOn: liveActivityBinding
                 )
             }
             .glassPanel()
