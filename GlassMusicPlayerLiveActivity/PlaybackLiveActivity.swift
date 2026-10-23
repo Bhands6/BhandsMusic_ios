@@ -11,17 +11,25 @@ extension PlaybackActivityAttributes.ContentState {
     var livePlaytime: Double {
         playClock + (playingSince.map { max(0, Date().timeIntervalSince($0)) } ?? 0)
     }
+
+    /// 动画相位：冻结前 = 会话播放钟 + 1s aim-ahead（补间恰好抵消渲染滞后）；
+    /// 冻结后 = 定格值（App 侧已算好 = 冻结瞬间瞄准中的目标，
+    /// 最后一帧补间无缝滑入）。
+    var animPhase: Double {
+        freezePhase ?? (livePlaytime + 1)
+    }
 }
 
-/// 补间窗口：动画目标瞄准「未来 N 秒」、补间时长同为 N —— 系统在两帧快照之间
-/// 按此时长线性插值，N 与帧间隔一致时严格匀速（角度是时间的线性函数，
-/// 1Hz 关键帧 + 1s 线性补间 = 完美匀速旋转；帧丢了相位也不漂，
-/// 相位真源是会话播放钟）。
-/// ⚠️ N 不能远大于帧间隔：曾用 3600s 给封面「零帧需求」，结果两帧间
-/// 72° 的角度差被摊到 3600s 里（或被系统钳制时长），旋转变成卡顿。
-/// 暂停帧：目标 = 当前位置且不补间 → 立即定格。
-private let coverTweenWindow: Double = 1
-private let barTweenWindow: Double = 1
+/// 补间模型：动画目标瞄准「未来 1 秒」、补间时长 1 秒 —— 系统在两帧快照之间
+/// 按此时长线性插值，与 1Hz 帧间隔一致 → 严格匀速（角度是时间的线性函数，
+/// aim-ahead 恰好抵消补间滞后；相位真源是会话播放钟，切歌/拖进度不跳变）。
+///
+/// 平台预算（2026-10 日志 + 连拍实证）：单活动只有约 215~260 次按秒渲染，
+/// 之后系统把渲染合并成**精确 15.0s 一帧**，且补间时长被钳制在 ~3s ——
+/// 跨帧连续动画物理上不可能（15s 补间只剩 ~3s 动 + 12s 停 = 「快转再定格」）。
+/// 所以 App 侧第 ~190 次推送起用 freezePhase 优雅定格，换歌时重开新活动
+/// 恢复动画。渲染合并后本视图渲染的是恒定相位 → 永远静止、永无快转。
+/// ⚠️ 勿用远大于帧间隔的补间时长（曾用 3600s，结果被钳制后卡顿）。
 
 struct PlaybackLiveActivity: Widget {
     private let deepLink = URL(string: "bhandsmusic://nowplaying")
@@ -35,13 +43,10 @@ struct PlaybackLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    let angle = (context.state.livePlaytime + coverTweenWindow) * 72
+                    let angle = context.state.animPhase * 72
                     CoverArt(state: context.state, diameter: 40, cornerRadius: 10)
                         .rotationEffect(.degrees(angle))
-                        .animation(
-                            context.state.isPlaying ? .linear(duration: coverTweenWindow) : nil,
-                            value: angle
-                        )
+                        .animation(.linear(duration: 1), value: angle)
                         .accessibilityHidden(true)
                 }
 
@@ -64,13 +69,10 @@ struct PlaybackLiveActivity: Widget {
                     .padding(.top, 2)
                 }
             } compactLeading: {
-                let angle = (context.state.livePlaytime + coverTweenWindow) * 72
+                let angle = context.state.animPhase * 72
                 CoverArt(state: context.state, diameter: 30)
                     .rotationEffect(.degrees(angle))
-                    .animation(
-                        context.state.isPlaying ? .linear(duration: coverTweenWindow) : nil,
-                        value: angle
-                    )
+                    .animation(.linear(duration: 1), value: angle)
                     .accessibilityHidden(true)
             } compactTrailing: {
                 CompactPlaybackStatus(state: context.state)
@@ -83,15 +85,12 @@ struct PlaybackLiveActivity: Widget {
     }
 
     private func lockScreenCard(_ state: PlaybackActivityAttributes.ContentState) -> some View {
-        let angle = (state.livePlaytime + coverTweenWindow) * 72
+        let angle = state.animPhase * 72
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 CoverArt(state: state, diameter: 48, cornerRadius: 12)
                     .rotationEffect(.degrees(angle))
-                    .animation(
-                        state.isPlaying ? .linear(duration: coverTweenWindow) : nil,
-                        value: angle
-                    )
+                    .animation(.linear(duration: 1), value: angle)
                     .accessibilityHidden(true)
 
                 TrackMetadata(state: state, showsArtist: true, light: true)
@@ -184,11 +183,11 @@ private struct PlaybackStateIcon: View {
                     .foregroundStyle(Color(red: 0.95, green: 0.28, blue: 0.35))
             } else {
                 // 竖条相位 = 会话播放钟 × 3.1 rad/s（≈2 秒一个起伏周期）。
-                // aim-ahead：目标瞄准未来 1 秒的相位、补间 1 秒 —— 恒速起伏，
-                // 与帧率无关；App 侧 1Hz 帧流负责持续重瞄准。
+                // aim-ahead：目标瞄准未来 1 秒、补间 1 秒 —— 恒速起伏。
                 // 相位真源是会话钟 —— 切歌、拖进度条都不打断起伏。
-                // 暂停帧目标 = 当前相位且不补间 → 立即定格。
-                let phase = (state.livePlaytime + barTweenWindow) * 3.1
+                // 渲染预算耗尽后 App 侧定格（animPhase 恒定）→ 竖条静止
+                // 而非快转跳动；换歌重开新活动后恢复起伏。
+                let phase = state.animPhase * 3.1
                 HStack(alignment: .center, spacing: 2) {
                     ForEach(0..<5, id: \.self) { index in
                         Capsule()
@@ -197,10 +196,7 @@ private struct PlaybackStateIcon: View {
                     }
                 }
                 .frame(height: 20)
-                .animation(
-                    state.isPlaying ? .linear(duration: barTweenWindow) : nil,
-                    value: phase
-                )
+                .animation(.linear(duration: 1), value: phase)
             }
         }
         .frame(height: 20)

@@ -56,6 +56,17 @@ final class PlaybackActivityManager {
     private var pendingEnd: (activity: Activity<PlaybackActivityAttributes>, policy: ActivityUIDismissalPolicy)?
     private var deliveryRunning = false
 
+    /// 渲染预算（推送次数计）。单活动约 215~260 次按秒渲染后，系统把渲染
+    /// 合并成精确 15.0s 一帧、补间被钳制 ~3s —— 连续动画从此不可能。
+    /// 第 190 次推送起主动定格动画（零跳变，见 ContentState.freezePhase）；
+    /// 换歌时若已到阈值就重开新活动 —— 新预算、动画立刻恢复、会话钟延续。
+    private let pushBudget: UInt64 = 190
+    /// 本活动创建时的 pushID，用来数「这个活动已经推了多少帧」。
+    private var pushIDAtCreation: UInt64 = 0
+    /// 定格相位。一旦设置就不再变（会话钟还在走，但动画不再跟随），
+    /// 直到重开新活动或会话结束。
+    private var frozenPhase: Double?
+
     private var isEnabled: Bool {
         PlaybackActivitySettings.isEnabled && ActivityAuthorizationInfo().areActivitiesEnabled
     }
@@ -110,6 +121,34 @@ final class PlaybackActivityManager {
     ) {
         guard isEnabled else { return }
 
+        // 预算耗尽后换歌：重开一张新活动拿回按秒渲染的预算。
+        // 会话钟在 ContentState 里延续，新卡封面角度无缝；定格解除。
+        var recycled = false
+        if let activity,
+           songKey != currentKey,
+           pushID - pushIDAtCreation >= pushBudget {
+            self.activity = nil
+            pendingEnd = (activity: activity, policy: .immediate)
+            frozenPhase = nil
+            recycled = true
+            #if DEBUG
+            Self.probe("预算耗尽换卡回收 song=\(songKey) pushes=\(pushID - pushIDAtCreation)")
+            #endif
+        }
+
+        // 动画定格：预算推满后锁相位。定格值 = 当前瞄准中的目标
+        // （livePlaytime + 1s aim-ahead）—— 上一帧补间恰好滑入这个值。
+        // 换卡回收帧 / 无活动帧不冻结（新活动预算从零开始）。
+        if frozenPhase == nil, !recycled, self.activity != nil,
+           pushID - pushIDAtCreation >= pushBudget {
+            let livePlaytime = playClock
+                + (playingSince.map { max(0, Date().timeIntervalSince($0)) } ?? 0)
+            frozenPhase = livePlaytime + 1
+            #if DEBUG
+            Self.probe("渲染预算耗尽，动画定格 phase=\(String(format: "%.1f", frozenPhase ?? 0))")
+            #endif
+        }
+
         lastSync = SyncParams(
             title: title,
             artist: artist,
@@ -134,7 +173,8 @@ final class PlaybackActivityManager {
             artworkData: encodedArtwork(for: songKey, name: artworkName),
             timestamp: timestamp,
             playClock: playClock,
-            playingSince: playingSince
+            playingSince: playingSince,
+            freezePhase: frozenPhase
         )
         let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(900))
 
@@ -173,6 +213,8 @@ final class PlaybackActivityManager {
                 attributes: PlaybackActivityAttributes(),
                 content: content
             )
+            pushIDAtCreation = pushID
+            frozenPhase = nil
             #if DEBUG
             Self.probe("request OK song=\(songKey) id=\(activity?.id ?? "-")")
             #endif
@@ -279,6 +321,7 @@ final class PlaybackActivityManager {
         if pendingEnd?.activity.id == stuck.id { pendingEnd = nil }
         if lingering?.id == stuck.id { lingering = nil }
         pendingContent = nil
+        frozenPhase = nil
         nextRequestAllowed = Date().addingTimeInterval(2)
         // 连 end 都不等 —— 卡死过的活动 end 也可能不返回，不能让它堵住管道。
         Task { await stuck.end(nil, dismissalPolicy: .immediate) }
@@ -330,6 +373,7 @@ final class PlaybackActivityManager {
     private func resetSession() {
         currentKey = nil
         lastSync = nil
+        frozenPhase = nil
         // 设置页重新开启或开始下一场播放时允许创建新活动。
         userDismissed = false
     }

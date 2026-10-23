@@ -42,6 +42,18 @@ struct PlaybackActivityAttributes: ActivityAttributes {
         var playClock: Double
         var playingSince: Date?
 
+        /// 动画定格相位。非 nil 时封面旋转角 = freezePhase × 72°、
+        /// 竖条相位 = freezePhase × 3.1 —— 不再跟随会话播放钟。
+        ///
+        /// 平台约束（2026-10 日志 + 连拍实证）：单个活动只有约 215~260 次
+        /// 按秒渲染的预算，耗尽后系统把渲染合并成**精确 15.0 秒一帧**，且
+        /// SwiftUI 补间时长被钳制在 ~3 秒 —— 15 秒跨帧连续动画物理上不可能，
+        /// 强行补间只会得到「快转几圈再定格」。所以 App 侧在第 ~190 次推送时
+        /// 主动定格：定格值 = 当时瞄准中的目标相位，正在播放的最后一帧补间
+        /// 恰好滑入定格值 —— **零跳变**。换歌时若预算已耗尽会重开新活动
+        /// （新预算），定格解除、动画恢复。
+        var freezePhase: Double?
+
         var isLive: Bool { duration <= 0 }
         var remaining: Double { max(duration - elapsed, 0) }
     }
