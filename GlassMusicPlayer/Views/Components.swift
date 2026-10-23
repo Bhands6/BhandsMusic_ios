@@ -750,3 +750,69 @@ struct LiquidTabBar: View {
         }
     }
 }
+
+/// 会员徽标。造型照网易云：**金色小圆角矩形 + 深棕字 + 一圈细金边**。
+///
+/// 三档区分：VIP 浅金、SVIP 亮金、普通用户中性灰 —— 金色只留给真会员，
+/// 这样「有没有买会员」在一张卡上扫一眼就知道。
+struct MembershipTag: View {
+    let tier: Membership
+
+    var body: some View {
+        Text(tier.title)
+            .font(.system(size: 9, weight: .heavy))
+            .tracking(0.4)
+            .foregroundStyle(textColor)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background {
+                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                    .fill(fill)
+            }
+            .overlay {
+                // 浅金底压在浅色卡上，没有这一圈描边会糊成一团
+                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                    .strokeBorder(stroke, lineWidth: 0.5)
+            }
+            .accessibilityLabel("会员等级 \(tier.title)")
+    }
+
+    private var fill: AnyShapeStyle {
+        switch tier {
+        case .svip:
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [Color(hex: 0xFFD873), Color(hex: 0xE08F1E)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+        case .vip:
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [Color(hex: 0xFFE9BE), Color(hex: 0xE7AE4E)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+        case .none:
+            return AnyShapeStyle(LiquidTheme.Palette.tertiary.opacity(0.14))
+        }
+    }
+
+    private var textColor: Color {
+        switch tier {
+        case .svip: return Color(hex: 0x4A2E00)
+        case .vip: return Color(hex: 0x6B4A12)
+        case .none: return LiquidTheme.Palette.secondary
+        }
+    }
+
+    private var stroke: Color {
+        switch tier {
+        case .svip: return Color(hex: 0xB4761A).opacity(0.55)
+        case .vip: return Color(hex: 0xC08F35).opacity(0.45)
+        case .none: return LiquidTheme.Palette.separator.opacity(0.5)
+        }
+    }
+}

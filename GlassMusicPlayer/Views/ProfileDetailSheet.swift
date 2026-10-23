@@ -1,7 +1,13 @@
 import SwiftUI
 
 /// 音质档位。直接对应网易云 `/song/url/v1` 的 `level` 参数。
+///
+/// **声明顺序就是界面顺序，从高到低**。带 `requiresMembership` 的档位只有会员看得见 ——
+/// 非会员选了也拿不到地址（接口会退回低码率，或者干脆给空 url）。
 enum AudioQuality: String, CaseIterable, Identifiable {
+    case jymaster
+    case sky
+    case hires
     case lossless
     case high
     case standard
@@ -10,6 +16,9 @@ enum AudioQuality: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .jymaster: return "超清母带"
+        case .sky: return "沉浸环绕声"
+        case .hires: return "Hi-Res"
         case .lossless: return "无损"
         case .high: return "高品质"
         case .standard: return "标准"
@@ -18,6 +27,9 @@ enum AudioQuality: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
+        case .jymaster: return "母带级 · SVIP 专属"
+        case .sky: return "空间音频 · 会员专属"
+        case .hires: return "高解析度无损 · 会员专属"
         case .lossless: return "FLAC · 文件大，音质最好"
         case .high: return "320kbps · 默认"
         case .standard: return "128kbps · 省流量"
@@ -26,16 +38,55 @@ enum AudioQuality: String, CaseIterable, Identifiable {
 
     var neteaseLevel: String {
         switch self {
+        case .jymaster: return "jymaster"
+        case .sky: return "sky"
+        case .hires: return "hires"
         case .lossless: return "lossless"
         case .high: return "exhigh"
         case .standard: return "standard"
         }
     }
 
+    /// 解锁这一档需要什么等级。
+    ///
+    /// 网易云的分档（2026 年的权益）：
+    /// - **沉浸环绕声 / Hi-Res**：黑胶 VIP 就有；
+    /// - **超清母带**（192kHz/24bit）：SVIP 的核心卖点，VIP 用不了；
+    /// - 无损 / 高品质 / 标准：免费。
+    ///
+    /// 无损这里仍对所有人开放 —— 沿用 App 原有行为，没跟着网易云的 VIP 限制走。
+    var requiredTier: Membership {
+        switch self {
+        case .jymaster: return .svip
+        case .sky, .hires: return .vip
+        case .lossless, .high, .standard: return .none
+        }
+    }
+
+    /// 会员才有权限的档位（列表里要挂金标的那种）。
+    var requiresMembership: Bool { requiredTier != .none }
+
+    /// 当前会员等级能不能选这一档。
+    func isUnlocked(for tier: Membership) -> Bool {
+        tier.covers(requiredTier)
+    }
+
     /// 当前档位。存 UserDefaults，重开 App 还在。
     static var current: AudioQuality {
         get { AudioQuality(rawValue: UserDefaults.standard.string(forKey: "audioQuality") ?? "") ?? .high }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "audioQuality") }
+    }
+
+    /// 实际生效的档位。
+    ///
+    /// 会员过期或降级后 `current` 可能还停在高档位上（比如 SVIP 掉了还选着超清母带）——
+    /// 这时候退回高品质，否则每次请求都拿不到播放地址。续费之后原来的选择会自动回来。
+    static var effective: AudioQuality {
+        let selected = AudioQuality.current
+        guard selected.isUnlocked(for: NeteaseSession.shared.membership) else {
+            return .high
+        }
+        return selected
     }
 }
 
@@ -84,7 +135,7 @@ struct ProfileDetailSheet: View {
     @Environment(NeteaseSession.self) private var session
     @Environment(LibraryStore.self) private var library
     @Environment(PlaylistStore.self) private var playlists
-    @State private var quality = AudioQuality.current
+    @State private var quality = AudioQuality.effective
     @State private var serverURL = ServerSettings.baseURLString
     @State private var apiKey = ServerSettings.apiKey
     @State private var probeState: ProbeState = .idle
@@ -273,13 +324,15 @@ struct ProfileDetailSheet: View {
 
     private var qualityContent: some View {
         VStack(alignment: .leading, spacing: LiquidTheme.Spacing.sm) {
-            Text("选择在线播放的码率。改动立即生效，下一首开始按新档位请求。")
+            Text(session.membership.isMember
+                 ? "选择在线播放的码率。沉浸环绕声、Hi-Res 为黑胶 VIP 权益，超清母带为黑胶 SVIP 专属。"
+                 : "选择在线播放的码率。改动立即生效，下一首开始按新档位请求。")
                 .font(LiquidTheme.Typography.caption)
                 .foregroundStyle(LiquidTheme.Palette.secondary)
                 .padding(.horizontal, LiquidTheme.Spacing.screenH)
 
             VStack(spacing: 0) {
-                ForEach(Array(AudioQuality.allCases.enumerated()), id: \.element.id) { index, option in
+                ForEach(Array(availableQualities.enumerated()), id: \.element.id) { index, option in
                     if index > 0 { divider }
 
                     Button {
@@ -288,9 +341,16 @@ struct ProfileDetailSheet: View {
                     } label: {
                         HStack(spacing: LiquidTheme.Spacing.sm) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(option.title)
-                                    .font(LiquidTheme.Typography.rowTitle)
-                                    .foregroundStyle(LiquidTheme.Palette.label)
+                                HStack(spacing: 5) {
+                                    Text(option.title)
+                                        .font(LiquidTheme.Typography.rowTitle)
+                                        .foregroundStyle(LiquidTheme.Palette.label)
+
+                                    // 会员专属档位挂金标：VIP 浅金、SVIP 亮金，和「我的」页同一套视觉
+                                    if option.requiresMembership {
+                                        MembershipTag(tier: option.requiredTier)
+                                    }
+                                }
                                 Text(option.subtitle)
                                     .font(LiquidTheme.Typography.rowMeta)
                                     .foregroundStyle(LiquidTheme.Palette.secondary)
@@ -314,6 +374,13 @@ struct ProfileDetailSheet: View {
             .glassPanel()
             .padding(.horizontal, LiquidTheme.Spacing.screenH)
         }
+    }
+
+    /// 只列出当前会员等级解锁得了的档位：普通用户看不到会员档，
+    /// VIP 看得到沉浸环绕声 / Hi-Res，超清母带要 SVIP。
+    /// 会员状态一变（比如刚续费），`session` 是 @Observable，列表会自己刷新。
+    private var availableQualities: [AudioQuality] {
+        AudioQuality.allCases.filter { $0.isUnlocked(for: session.membership) }
     }
 
     // MARK: - 已下载
@@ -413,7 +480,12 @@ struct ProfileDetailSheet: View {
             VStack(spacing: 0) {
                 infoRow("用户名", session.account?.nickname ?? "未登录")
                 divider
-                infoRow("会员", session.account?.membershipText ?? "—")
+                // 等级来自 `/vipinfo`，不是 `vipType` —— 后者分不出 VIP / SVIP
+                infoRow("会员", session.isLoggedIn ? session.membership.title : "—")
+                if let expiry = session.membershipExpiry, session.membership.isMember {
+                    divider
+                    infoRow("会员到期", expiry.formatted(.dateTime.year().month().day()))
+                }
                 divider
                 infoRow("网易云 UID", session.account.map { String($0.id) } ?? "—")
                 divider

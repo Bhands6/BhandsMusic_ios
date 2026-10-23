@@ -246,6 +246,65 @@ enum NeteaseAPI {
 
     // MARK: - 账号级接口
 
+    /// 黑胶会员信息。
+    ///
+    /// `/user/account` 的 `vipType` 到 11 为止 —— 黑胶VIP 和黑胶SVIP 都是 11，
+    /// 区分要靠这个接口：`data.associator.vipCode`（100 黑胶VIP / 300 黑胶SVIP），
+    /// `expireTime` 是毫秒时间戳，过期即非会员。
+    struct VipInfo {
+        /// 100 黑胶VIP / 300 黑胶SVIP；nil = 接口没给（未登录或非会员）
+        let vipCode: Int?
+        /// 毫秒时间戳；nil = 未知
+        let expireTime: Double?
+
+        /// 300 及以上都按 SVIP 算 —— 上游以后加新档位时不至于掉成 VIP。
+        var isSvip: Bool { (vipCode ?? 0) >= 300 }
+        /// 会员是否生效中。时间戳缺失时保守地只认 vipCode > 0。
+        var isActive: Bool {
+            guard let code = vipCode, code > 0 else { return false }
+            guard let expire = expireTime else { return true }
+            return expire > Date().timeIntervalSince1970 * 1000
+        }
+        /// 到期时间。非会员 / 没给时间戳时为 nil。
+        var expiry: Date? {
+            guard let expire = expireTime, expire > 0 else { return nil }
+            return Date(timeIntervalSince1970: expire / 1000)
+        }
+    }
+
+    /// 查会员等级。**需要登录**。
+    ///
+    /// 上游几个版本把会员字段放在不同位置（`data.associator` / `data.redVip` /
+    /// 直接平铺在 `data` 上），这里按顺序都找一遍 —— 只认一个位置的话，
+    /// 换个后端版本界面就退回「普通用户」了。
+    static func vipInfo() async throws -> VipInfo {
+        let json = try await get("/vipinfo", [:])
+        let data = json["data"] as? [String: Any]
+        let associator = data?["associator"] as? [String: Any]
+        let redVip = data?["redVip"] as? [String: Any]
+
+        for block in [associator, redVip, data].compactMap({ $0 }) {
+            guard let code = intValue(block["vipCode"]), code > 0 else { continue }
+            return VipInfo(vipCode: code, expireTime: doubleValue(block["expireTime"]))
+        }
+        return VipInfo(vipCode: nil, expireTime: nil)
+    }
+
+    /// JSON 里的数字可能是 Int / Double / String（上游有的字段是字符串），统一收一下。
+    private static func intValue(_ raw: Any?) -> Int? {
+        if let value = raw as? Int { return value }
+        if let value = raw as? Double { return Int(value) }
+        if let value = raw as? String { return Int(value) }
+        return nil
+    }
+
+    private static func doubleValue(_ raw: Any?) -> Double? {
+        if let value = raw as? Double { return value }
+        if let value = raw as? Int { return Double(value) }
+        if let value = raw as? String { return Double(value) }
+        return nil
+    }
+
     /// 每日推荐。**需要登录** —— 未登录时接口返回空，调用方要退回新歌速递。
     static func recommendSongs() async throws -> [Track] {
         let json = try await get("/recommend/songs", [:])
@@ -289,8 +348,9 @@ enum NeteaseAPI {
     /// 返回的常常是 `http://m7xx.music.126.net/...`，这里统一换成 https ——
     /// iOS 的 ATS 默认拦明文 HTTP，换掉就不用给整个域名开例外。
     static func streamURL(for id: Int) async throws -> URL {
-        // 档位跟着「我的 → 音质与下载」走，改完下一首就按新码率请求
-        let json = try await get("/song/url/v1", ["id": String(id), "level": AudioQuality.current.neteaseLevel])
+        // 档位跟着「我的 → 音质与下载」走，改完下一首就按新码率请求。
+        // 用 effective：会员档位在会员失效后要自动降级，否则拿不到地址。
+        let json = try await get("/song/url/v1", ["id": String(id), "level": AudioQuality.effective.neteaseLevel])
         guard
             let data = json["data"] as? [[String: Any]],
             let raw = data.first?["url"] as? String,

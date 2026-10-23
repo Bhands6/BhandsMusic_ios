@@ -197,6 +197,21 @@ app.get('/user/account', { preHandler: guard }, async (request, reply) => {
   }
 });
 
+/**
+ * 会员信息。`/user/account` 的 `vipType` 区分不了黑胶 SVIP（SVIP 也是 11），
+ * 这个接口的 `data.associator.vipCode` 才分得清：100 黑胶VIP / 300 黑胶SVIP，
+ * 配 `expireTime`（毫秒）判断是否生效。需要登录 cookie。
+ */
+app.get('/vipinfo', { preHandler: guard }, async (request, reply) => {
+  try {
+    return await cached('vip_info_v2', { cookie: request.query.cookie }, TTL.vip, {
+      withCookie: true,
+    });
+  } catch (error) {
+    return upstreamError(reply, error);
+  }
+});
+
 // MARK: - 歌单
 
 /** 用户的歌单列表。`uid` 必填；看自己的（含私密）要带 cookie。 */

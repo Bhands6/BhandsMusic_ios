@@ -62,7 +62,24 @@ final class AudioEngine {
         let session = AVAudioSession.sharedInstance()
         // .playback：静音键不影响播放，且支持后台继续
         try? session.setCategory(.playback, mode: .default)
-        try? session.setActive(true)
+        activateSession()
+    }
+
+    /// 激活音频会话。
+    ///
+    /// **不能在主线程同步 `setActive(true)`** —— 它要等音频路由就绪，
+    /// 系统会记一条 `AVAudioSession_iOS.mm ... This method can lead to UI
+    /// unresponsiveness` 的警告，启动时那一下卡顿也是它。
+    /// iOS 27 起有异步 API，26 上退到后台队列。
+    private func activateSession() {
+        let session = AVAudioSession.sharedInstance()
+        if #available(iOS 27.0, *) {
+            session.activate(options: []) { _, _ in }
+        } else {
+            DispatchQueue.global(qos: .userInitiated).async {
+                try? session.setActive(true)
+            }
+        }
     }
 
     // MARK: - 装载与传输控制
@@ -117,8 +134,8 @@ final class AudioEngine {
     }
 
     func play() {
-        // 会话可能被来电等打断过，播放前重新激活
-        try? AVAudioSession.sharedInstance().setActive(true)
+        // 会话可能被来电等打断过，播放前重新激活（异步，别卡主线程）
+        activateSession()
         player.play()
     }
 

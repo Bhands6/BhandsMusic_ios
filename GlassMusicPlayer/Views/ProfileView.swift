@@ -62,6 +62,9 @@ struct ProfileView: View {
             }
         }
         .onAppear {
+            // 会员等级随时会变（刚续费 / 刚过期），每次进这一页都问一次
+            Task { await session.refreshMembership() }
+
             // 截图用：-detail <name> 直接打开某个浮层（login 是扫码登录页）
             guard let raw = DebugLaunch.profileDetail else { return }
             if raw == "login" {
@@ -146,13 +149,9 @@ struct ProfileView: View {
                             .foregroundStyle(LiquidTheme.Palette.label)
                             .lineLimit(1)
 
-                        if let account = session.account, account.isVIP {
-                            Text(account.membershipText)
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(LiquidTheme.Palette.onAccent)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(LiquidTheme.Palette.accent))
+                        // 等级来自 `/vipinfo`：VIP 显示 VIP，SVIP 显示 SVIP
+                        if session.account != nil {
+                            membershipBadge
                         }
                     }
 
@@ -188,10 +187,19 @@ struct ProfileView: View {
         return "\(host):\(url.port!)"
     }
 
-    private var subtitleText: String {        guard let account = session.account else {
+    private var subtitleText: String {
+        guard let account = session.account else {
             return session.isLoading ? "正在获取账号信息…" : "点击登录网易云音乐"
         }
-        return "网易云 UID \(account.id) · \(account.membershipText)"
+        return "网易云 UID \(account.id) · \(session.membership.title)"
+    }
+
+    // MARK: - 会员徽标
+
+    /// 昵称右侧的会员徽标。等级只读 `session.membership`（`/vipinfo` 的结果），
+    /// 不再各自拿 `vipType` 猜 —— 那个字段分不出 VIP 和 SVIP。
+    private var membershipBadge: some View {
+        MembershipTag(tier: session.membership)
     }
 
     @ViewBuilder
@@ -263,7 +271,7 @@ struct ProfileView: View {
                     icon: "waveform.badge.magnifyingglass",
                     tint: LiquidTheme.Palette.accent,
                     title: "音质与下载",
-                    value: AudioQuality.current.title
+                    value: AudioQuality.effective.title
                 ) {
                     sheet = .detail(.quality)
                 }
